@@ -13,10 +13,10 @@ using namespace std;
 
 namespace Planner{
     struct ParamSingle{
-
+        double dummy_value1;
     };
     struct ParamConnected{
-
+        double dummy_value2;
     };
     struct Param{
         ParamSingle s_param;
@@ -39,6 +39,7 @@ namespace Planner{
         AbstractPlanner(shared_ptr<PlannerBase> p_base_):p_base(p_base_){};
         virtual bool plan(double t) = 0;
         virtual void updateTrajToBase() = 0;
+        virtual void updateValue() = 0;
     };
 }
 

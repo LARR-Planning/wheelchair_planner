@@ -8,6 +8,7 @@ SingleBodyPlanner::SingleBodyPlanner(const ParamSingle &s_param, shared_ptr<Plan
 }
 
 bool SingleBodyPlanner::plan(double t) {
+    updateValue();
     //TODO: IMPLEMENT PLANNING ALGORITHM HERE
 
     return false;
@@ -18,6 +19,14 @@ void SingleBodyPlanner::updateTrajToBase() {
         p_base->mSet[1].lock();
         //TODO: Update Planning Result
         p_base->mSet[1].unlock();
+    }
+}
+
+void SingleBodyPlanner::updateValue() {
+    {
+        p_base->mSet[0].lock();
+        //TODO: GET DATA From PlannerBase
+        p_base->mSet[0].unlock();
     }
 }
 

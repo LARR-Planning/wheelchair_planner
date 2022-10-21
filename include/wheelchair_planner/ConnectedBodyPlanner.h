@@ -14,6 +14,7 @@ public:
     ConnectedBodyPlanner(const ParamConnected &c_param, shared_ptr<PlannerBase>p_base_);
     bool plan(double t) override;
     void updateTrajToBase()  override;
+    void updateValue() override;
 
 };
 

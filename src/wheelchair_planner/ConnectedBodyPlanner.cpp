@@ -8,6 +8,7 @@ ConnectedBodyPlanner::ConnectedBodyPlanner(const ParamConnected &c_param, shared
 }
 
 bool ConnectedBodyPlanner::plan(double t) {
+    updateValue();
     //TODO: IMPLEMENT PLANNING ALGORITHM HERE;
 
     return false;
@@ -18,5 +19,13 @@ void ConnectedBodyPlanner::updateTrajToBase() {
         p_base->mSet[1].lock();
         //TODO: Update Planning Result
         p_base->mSet[1].unlock();
+    }
+}
+
+void ConnectedBodyPlanner::updateValue() {
+    {
+        p_base->mSet[0].lock();
+        //TODO: GET DATA From PlannerBase
+        p_base->mSet[0].unlock();
     }
 }

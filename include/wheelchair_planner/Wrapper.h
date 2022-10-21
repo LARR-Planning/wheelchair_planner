@@ -18,6 +18,13 @@ private:
     shared_ptr<PlannerBase> p_base;
     Param param;
 
+    //TODO: ROS SUBSCRIBER DECLARATION
+
+    //TODO: CALLBACK FUNCTION DECLARATION
+
+    //TODO: ROS PUBLISHER DECLARATION
+
+
     void prepareROSmsgs();
     void publish();
 
@@ -26,6 +33,7 @@ public:
     void updateParam(Param &param_);
     void runROS();
     double curTime(){return (ros::Time::now().toSec()-t0);}
+    bool isAllSourceReceived();
 
 };
 

@@ -9,10 +9,13 @@ using namespace Planner;
 class SingleBodyPlanner: public AbstractPlanner{
 private:
     ParamSingle param;
+
+
 public:
     SingleBodyPlanner(const ParamSingle &s_param, shared_ptr<PlannerBase>p_base_);
     bool plan(double t) override;
     void updateTrajToBase()  override;
+    void updateValue() override;
 
 };
 
