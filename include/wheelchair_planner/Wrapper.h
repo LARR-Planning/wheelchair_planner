@@ -4,6 +4,8 @@
 #ifndef WHEELCHAIR_PLANNER_WRAPPER_H
 #define WHEELCHAIR_PLANNER_WRAPPER_H
 
+#include <wheelchair_planner/PlannerCore.h>
+
 
 
 
