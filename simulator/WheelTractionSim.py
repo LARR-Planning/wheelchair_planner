@@ -9,8 +9,8 @@ import time
 from pygame import Rect
 from utils import *
 import sys
-sys.path.append('/home/syeon/bosanjin')
-import mpc_ackermann_steering_func as mpc
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+from planner import MPCAckermann as mpc
 
 
 class WheelTractionSim:
@@ -361,7 +361,7 @@ if __name__ == "__main__":
             x_vel = v_r
             y_vel = phi
             ang_vel = yaw_rate_command
-        for i in range(5):
+        for i in range(3):
             wheel_sim.step(x_vel, y_vel, ang_vel)
         clock.tick(tick)
         cur = time.time()

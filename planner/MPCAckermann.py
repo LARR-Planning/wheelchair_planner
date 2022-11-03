@@ -59,7 +59,7 @@ class ackermann_mpc():
         P = ca.SX.sym('P', self.n_states + self.n_states)  # parameters which include the initial (in every step) and the reference state of the robot
 
         # define
-        Q = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 2.0]])
+        Q = np.array([[1.0, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]])
         R = np.array([[1.0, 0.0], [0.0, 0.0]])
 
         # cost function
@@ -137,12 +137,14 @@ class ackermann_mpc():
 
     def ackermann_mpc(self):
         self.is_callback = False
+
+        # initial and goal states
         initial_loc = (0, 0, 0)
         if self.current_theta != 0:
-            # goal_x, goal_y, goal_theta = self.current_y/np.sin(abs(self.current_theta)), 0, - self.current_theta
             goal_x, goal_y, goal_theta = self.current_y/np.sin(abs(self.current_theta)), 0, - self.current_theta
-            if abs(goal_theta) < (45 * np.pi / 180) :
-                goal_x = self.v_max*self.T*self.N
+            if abs(goal_theta) < (70 * np.pi / 180) :
+                if goal_x > self.v_max*self.T*self.N:
+                    goal_x = self.v_max*self.T*self.N
                 goal_y = -self.current_y
         else:
             goal_x, goal_y, goal_theta = 0, 0, 0
@@ -150,27 +152,27 @@ class ackermann_mpc():
 
         t0 = 0.0
         x0 = np.array(initial_loc).reshape(-1,1)  # initial state
-        x0_ = x0.copy()
         x_m = np.zeros((self.n_states, self.N+1))
         next_states = x_m.copy().T
         xs = np.array(goal_loc).reshape(-1,1)   # final state
+
+        # initial control inputs
         if self.first_iter:
             self.u0 = np.array([self.current_vel, self.current_steering]*self.N).reshape(-1,2)
         else:
             self.u0[0] = [self.current_vel, self.current_steering]
         self.first_iter = False
-        # else:
-        #     self.u0 = self.u0
-        self.x_c = []  # contains for the history of the state
-        self.u_c = []
+
+        x_c = []  # contains for the history of the state
+        u_c = []
         self.t_c = []  # for the time
         sim_time = 20.0
         mpciter = 0
 
-        # just move straight when the robot close enough to the goal line
+        # Move straight when the robot close enough to the goal line
         while np.linalg.norm(x0-xs) <= 1e-2:
-            self.u_c.append(np.array([self.v_max, 0]))
-            self.for_simulation_command = self.u_c[-1]
+            u_c.append(np.array([self.v_max, 0]))
+            self.for_simulation_command = u_c[-1]
             print('mpc linear moving')
             return 0
 
@@ -178,8 +180,7 @@ class ackermann_mpc():
         while(np.linalg.norm(x0-xs) > 1e-2): # and self.mpciter-sim_time/self.T < 0.0):
             one_iter_time = time.time()
             # set parameter
-            c_p = np.concatenate((x0, xs)) #, human_trajectory[:,mpciter:mpciter+N+1]))
-            # print(u0.reshape(-1, 1))
+            c_p = np.concatenate((x0, xs))
             init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
             t_ = time.time()
             res = self.solver(x0=init_control, p=c_p, lbg=self.lbg, lbx=self.lbx, ubg=self.ubg, ubx=self.ubx)
@@ -188,8 +189,8 @@ class ackermann_mpc():
             estimated_opt = res['x'].full()
             self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
             x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
-            self.x_c.append(x_m.T)
-            self.u_c.append(self.u0[0, :])
+            x_c.append(x_m.T)
+            u_c.append(self.u0[0, :])
             self.t_c.append(t0)
             t0, x0, self.u0, next_states = self.shift_movement(self.T, t0, x0, self.u0, x_m, self.f)
             x0 = ca.reshape(x0, -1, 1)
@@ -198,43 +199,13 @@ class ackermann_mpc():
             self.current_y = goal_x - x0[0]
             self.current_theta = x0[2] - goal_theta
             xs = np.array([x0[0] + self.current_y/np.sin(abs(self.current_theta)), x0[1], np.array([goal_theta])]).reshape(-1,1)
-            # print(u0[0])
             mpciter += 1
             print(f"one iteration time: {time.time() - one_iter_time}")
 
             # for 승우 simulation
-            self.for_simulation_command = self.u_c[-1]
+            self.for_simulation_command = u_c[-1]
             return 0
-
-            # if self.is_callback == True:
-            #     mpciter = 0
-            #     initial_loc = (0, 0, 0)
-            #     goal_x, goal_y, goal_theta = self.current_y/np.sin(abs(self.current_theta)), 0, - self.current_theta
-            #     goal_loc = (goal_x, goal_y, goal_theta)
-
-            #     t0 = 0.0
-            #     x0 = np.array(initial_loc).reshape(-1,1)  # initial state
-            #     x0_ = x0.copy()
-            #     x_m = np.zeros((self.n_states, self.N+1))
-            #     next_states = x_m.copy().T
-            #     xs = np.array(goal_loc).reshape(-1,1)   # final state
-
-            #     self.u0[0] = [self.current_vel, self.current_steering]
-            #     self.x_c = []  # contains for the history of the state
-            #     self.u_c = []
-            #     self.t_c = []  # for the time
-            #     self.is_callback = False
-
-        # t_v = np.array(self.index_t)
-        # self.states_for_visualize = np.squeeze(np.array(self.states_for_visualize), axis = 2)
-
-        # print("solver average time:", t_v.mean())
-        # print("whole mpc iteration average time:", (time.time() - self.start_time)/(self.mpciter))
-        # print("initial robot location:", initial_loc)
-        # print("final robot location:", self.states_for_visualize[-1,:])
-        # print("final goal x:", goal_x, ", final goal theta:", goal_theta)
-        # print("final goal error(meter):", goal_x - self.states_for_visualize[-1,0], ", final theta error(degree):", (goal_theta - self.states_for_visualize[-1,2])*180/np.pi)
-        # print('end')
+        
 
 if __name__ == "__main__":
     # Simulation
