@@ -20,7 +20,6 @@ class ackermann_mpc():
         self.is_stop = False
 
         self.create_mpc_model()
-        # self.ackermann_mpc()
 
     def state_update(self, current_y, current_theta, current_vel, current_omega):
         self.current_y = current_y
@@ -60,7 +59,7 @@ class ackermann_mpc():
         P = ca.SX.sym('P', self.n_states + self.n_states)  # parameters which include the initial (in every step) and the reference state of the robot
 
         # define
-        Q = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 3.0]])
+        Q = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 2.0]])
         R = np.array([[1.0, 0.0], [0.0, 0.0]])
 
         # cost function
@@ -170,6 +169,13 @@ class ackermann_mpc():
         sim_time = 20.0
         mpciter = 0
 
+        # just move straight when the robot close enough to the goal line
+        while np.linalg.norm(x0-xs) <= 1e-2:
+            self.u_c.append(np.array([self.v_max, 0]))
+            self.for_simulation_command = self.u_c[-1]
+            print('mpc linear moving')
+            return 0
+
         # start MPC
         while(np.linalg.norm(x0-xs) > 1e-2): # and self.mpciter-sim_time/self.T < 0.0):
             one_iter_time = time.time()
@@ -199,32 +205,28 @@ class ackermann_mpc():
             print(f"one iteration time: {time.time() - one_iter_time}")
 
             # for 승우 simulation
-            self.for_simulation_command = self.u_c[mpciter-1]
+            self.for_simulation_command = self.u_c[-1]
             return 0
 
-            if self.is_callback == True:
-                mpciter = 0
-                initial_loc = (0, 0, 0)
-                goal_x, goal_y, goal_theta = self.current_y/np.sin(abs(self.current_theta)), 0, - self.current_theta
-                goal_loc = (goal_x, goal_y, goal_theta)
+            # if self.is_callback == True:
+            #     mpciter = 0
+            #     initial_loc = (0, 0, 0)
+            #     goal_x, goal_y, goal_theta = self.current_y/np.sin(abs(self.current_theta)), 0, - self.current_theta
+            #     goal_loc = (goal_x, goal_y, goal_theta)
 
-                t0 = 0.0
-                x0 = np.array(initial_loc).reshape(-1,1)  # initial state
-                x0_ = x0.copy()
-                x_m = np.zeros((self.n_states, self.N+1))
-                next_states = x_m.copy().T
-                xs = np.array(goal_loc).reshape(-1,1)   # final state
+            #     t0 = 0.0
+            #     x0 = np.array(initial_loc).reshape(-1,1)  # initial state
+            #     x0_ = x0.copy()
+            #     x_m = np.zeros((self.n_states, self.N+1))
+            #     next_states = x_m.copy().T
+            #     xs = np.array(goal_loc).reshape(-1,1)   # final state
 
-                self.u0[0] = [self.current_vel, self.current_steering]
-                self.x_c = []  # contains for the history of the state
-                self.u_c = []
-                self.t_c = []  # for the time
-                self.is_callback = False
+            #     self.u0[0] = [self.current_vel, self.current_steering]
+            #     self.x_c = []  # contains for the history of the state
+            #     self.u_c = []
+            #     self.t_c = []  # for the time
+            #     self.is_callback = False
 
-        while np.linalg.norm(x0-xs) <= 1e-2:
-            self.for_simulation_command = np.array([self.v_max, 0])
-            print('mpc linear moving')
-            return 0
         # t_v = np.array(self.index_t)
         # self.states_for_visualize = np.squeeze(np.array(self.states_for_visualize), axis = 2)
 
@@ -241,11 +243,12 @@ if __name__ == "__main__":
     img_size_x, img_size_y = 10, 10
     img_size = (img_size_x, img_size_y)
     robot_x, robot_y, robot_theta = img_size_x / 2, img_size_y / 2, 0
-    # robot_loc = (robot_x, robot_y, robot_theta)
     ys = 1.5 # meter
     theta_s = 90 * np.pi / 180  # rad
 
-    my_model = ackermann_mpc(init_y=ys, init_theta=theta_s, init_vel=0.5)
+    my_model = ackermann_mpc()
+    my_model.state_update(current_y=ys, current_theta=theta_s, current_vel=0.5, current_omega=0)
+    my_model.ackermann_mpc()
 
     plt.plot(my_model.states_for_visualize[:,0]+robot_x, my_model.states_for_visualize[:,1]+robot_y)
     plt.xlim(0, img_size[0])
