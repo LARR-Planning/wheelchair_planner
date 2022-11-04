@@ -18,6 +18,7 @@ class ackermann_mpc():
         self.states_for_visualize = []
         self.index_t = []
         self.is_stop = False
+        self.control_time = np.array([self.T * i for i in range(self.N)])
 
         self.create_mpc_model()
 
@@ -165,20 +166,21 @@ class ackermann_mpc():
 
         x_c = []  # contains for the history of the state
         u_c = []
-        self.t_c = []  # for the time
+        t_c = []  # for the time
         sim_time = 20.0
         mpciter = 0
 
         # Move straight when the robot close enough to the goal line
         while np.linalg.norm(x0-xs) <= 1e-2:
-            u_c.append(np.array([self.v_max, 0]))
-            self.for_simulation_command = u_c[-1]
+            self.u0 = np.array([[self.v_max, 0]]*self.N)
+            self.control_output = self.u0
             print('mpc linear moving')
             return 0
 
         # start MPC
         while(np.linalg.norm(x0-xs) > 1e-2): # and self.mpciter-sim_time/self.T < 0.0):
             one_iter_time = time.time()
+            t0 = 0
             # set parameter
             c_p = np.concatenate((x0, xs))
             init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
@@ -191,7 +193,7 @@ class ackermann_mpc():
             x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
             x_c.append(x_m.T)
             u_c.append(self.u0[0, :])
-            self.t_c.append(t0)
+            t_c.append(t0)
             t0, x0, self.u0, next_states = self.shift_movement(self.T, t0, x0, self.u0, x_m, self.f)
             x0 = ca.reshape(x0, -1, 1)
             x0 = x0.full()
@@ -203,7 +205,7 @@ class ackermann_mpc():
             print(f"one iteration time: {time.time() - one_iter_time}")
 
             # for 승우 simulation
-            self.for_simulation_command = u_c[-1]
+            self.control_output = self.u0
             return 0
         
 

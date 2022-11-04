@@ -349,13 +349,15 @@ if __name__ == "__main__":
                         print("turn to right")
                         yaw_rate_command -= 0.1
 
-        
+        cur = time.time()
+
         if wheel_sim.with_chair:
             # x_vel, y_vel, ang_vel = gen_from_rc(v_r, phi, wheel_sim.L)
             # MPC example
             syeon_model.state_update(wheel_sim.lT_r.position.y_val, wheel_sim.lT_r.rotation.yaw, sqrt(wheel_sim.x_vel**2 + wheel_sim.y_vel**2), wheel_sim.yaw_rate)
             syeon_model.ackermann_mpc()
-            vel_command, steering_angle = syeon_model.for_simulation_command
+            vel_command, steering_angle = syeon_model.control_output[0] # first step control among N (horizon len) by 2 control outputs
+            control_time = syeon_model.control_time + cur  # time step from now to end of horizon
             x_vel, y_vel, ang_vel = vel_command*np.cos(steering_angle), vel_command*np.sin(steering_angle), vel_command*np.sin(steering_angle)/syeon_model.l_wh
         else:
             x_vel = v_r
@@ -364,7 +366,6 @@ if __name__ == "__main__":
         for i in range(3):
             wheel_sim.step(x_vel, y_vel, ang_vel)
         clock.tick(tick)
-        cur = time.time()
         if (cur - key_cur) > 0.1:
             key_cur = cur
             key_flag = True
