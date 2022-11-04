@@ -145,7 +145,7 @@ class ackermann_mpc():
             if abs(goal_theta) < (70 * np.pi / 180) :
                 if goal_x > self.v_max*self.T*self.N:
                     goal_x = self.v_max*self.T*self.N
-                goal_y = -self.current_y
+                goal_y = -self.current_y * np.cos(abs(self.current_theta))
         else:
             goal_x, goal_y, goal_theta = 0, 0, 0
         goal_loc = (goal_x, goal_y, goal_theta)
