@@ -75,7 +75,8 @@ while running:
         syeon_model.state_update(wheel_sim.lT_r.position.y_val, wheel_sim.lT_r.rotation.yaw,
                                  sqrt(wheel_sim.x_vel ** 2 + wheel_sim.y_vel ** 2), wheel_sim.yaw_rate)
         syeon_model.ackermann_mpc()
-        vel_command, steering_angle = syeon_model.for_simulation_command
+        vel_command, steering_angle = syeon_model.control_output[0] # first step control among N (horizon len) by 2 control outputs
+        control_time = syeon_model.control_time  # time step from now to end of horizon -> need to add current time
         x_vel, y_vel, ang_vel = vel_command * np.cos(steering_angle), vel_command * np.sin(
             steering_angle), vel_command * np.sin(steering_angle) / syeon_model.l_wh
     else:
