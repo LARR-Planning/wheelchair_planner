@@ -180,7 +180,7 @@ class ackermann_mpc():
         # start MPC
         while(np.linalg.norm(x0-xs) > 1e-2): # and self.mpciter-sim_time/self.T < 0.0):
             one_iter_time = time.time()
-            t0 = 0
+            # t0 = 0
             # set parameter
             c_p = np.concatenate((x0, xs))
             init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
@@ -191,16 +191,16 @@ class ackermann_mpc():
             estimated_opt = res['x'].full()
             self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
             x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
-            x_c.append(x_m.T)
-            u_c.append(self.u0[0, :])
-            t_c.append(t0)
-            t0, x0, self.u0, next_states = self.shift_movement(self.T, t0, x0, self.u0, x_m, self.f)
-            x0 = ca.reshape(x0, -1, 1)
-            x0 = x0.full()
-            self.states_for_visualize.append(x0)
-            self.current_y = goal_x - x0[0]
-            self.current_theta = x0[2] - goal_theta
-            xs = np.array([x0[0] + self.current_y/np.sin(abs(self.current_theta)), x0[1], np.array([goal_theta])]).reshape(-1,1)
+            # x_c.append(x_m.T)
+            # u_c.append(self.u0[0, :])
+            # t_c.append(t0)
+            # t0, x0, self.u0, next_states = self.shift_movement(self.T, t0, x0, self.u0, x_m, self.f)
+            # x0 = ca.reshape(x0, -1, 1)
+            # x0 = x0.full()
+            # self.states_for_visualize.append(x0)
+            # self.current_y = goal_x - x0[0]
+            # self.current_theta = x0[2] - goal_theta
+            # xs = np.array([x0[0] + self.current_y/np.sin(abs(self.current_theta)), x0[1], np.array([goal_theta])]).reshape(-1,1)
             mpciter += 1
             print(f"one iteration time: {time.time() - one_iter_time}")
 
