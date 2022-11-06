@@ -6,7 +6,7 @@ import os
 from copy import copy
 import yaml
 from pygame import Rect
-from utils import *
+from simulator.utils import *
 
 
 class WheelTractionSim:
@@ -39,6 +39,7 @@ class WheelTractionSim:
             self.with_chair = settings['start_with_chair']
             self.render = settings['render']
             self.env_size = settings['env_size']
+            self.traj_len = settings['traj_len']
 
         # define robot param
         self.x_vel = 0  # meter/sec
@@ -153,6 +154,12 @@ class WheelTractionSim:
         self.yaw_rate = 0
 
     def _update(self):
+        """
+        Updates all variables with dt, state_dot by following equation
+        -> X_new = X_old + dt * X_dot
+        Returns:
+            None
+        """
         # Update translation of robot/wheelchair
         rT_newr = Trans(Rot(self.yaw_rate * self.dt), Vector2(self.x_vel * self.dt, self.y_vel * self.dt))
         self.oT_r = trans_from_mat(self.oT_r.as_mat() @ rT_newr.as_mat())
@@ -168,7 +175,7 @@ class WheelTractionSim:
 
         self.trajectory_queue = np.append(self.trajectory_queue,
                                           np.array([[self.oT_r.position.x_val, self.oT_r.position.y_val]]), axis=0)
-        if len(self.trajectory_queue) > 100:
+        if len(self.trajectory_queue) > self.traj_len:
             self.trajectory_queue = self.trajectory_queue[1:, :]
 
         # focusing update
@@ -181,6 +188,10 @@ class WheelTractionSim:
             self.rend_wc()
 
     def rend_wc(self):
+        """
+        Render the wheelchair simulation.
+        Returns:
+        """
         self.py_map.fill((255, 255, 255))
         # Draw line & marker
         pygame.draw.line(self.py_map, (0, 0, 0), self._sur_coord((self.oT_l.position.x_val, self.oT_l.position.y_val)),
@@ -246,7 +257,7 @@ class WheelTractionSim:
 
         # Draw trajectory history
         if len(self.trajectory_queue) != 0:
-            traj = self.trajectory_queue[0:-1:10].copy()
+            traj = self.trajectory_queue[0:-1:int(self.traj_len/10)].copy()
             for point in traj:
                 pygame.draw.circle(self.py_map, (50, 50, 50), self._sur_coord(point), 1)
         pygame.display.update()
@@ -254,7 +265,7 @@ class WheelTractionSim:
     def _sur_coord(self, point):
         """
         transform to pygame surface coordinate
-        :param point:
+        :param point, point in world coordinate
         :return:
         """
         if type(point) is tuple or type(point) is list:
@@ -271,10 +282,21 @@ class WheelTractionSim:
                 point[1] = (-(point[1] - self.render_center.y_val) * self.rend_ratio + self.rend_size / 2).copy()
             return point
 
-    def reset_line(self, guideline_length=10, theta=None):
+    def reset_line(self, theta=None, guideline_length=10):
+        """
+        Update guideline with given angle
+        Args:
+            theta: angle of new guideline
+            guideline_length: length of new guideline
+
+        Returns:
+            None
+        """
         assert guideline_length > 0, "Guide line length must be positive."
         if theta is None:
             theta = (self.oT_l.rotation.yaw + pi / 2) % (2 * pi)
+        else:
+            theta = (theta) % (2 * pi)
         self.oT_l = Trans(Rot(theta), self.oT_nextnode.position)
         lT_nextnode = Trans(Rot(0), Vector2(guideline_length, 0))
         self.oT_nextnode = trans_from_mat(self.oT_l.as_mat() @ lT_nextnode.as_mat())

@@ -174,7 +174,7 @@ class ackermann_mpc():
         while np.linalg.norm(x0-xs) <= 1e-2:
             self.u0 = np.array([[self.v_max, 0]]*self.N)
             self.control_output = self.u0
-            print('mpc linear moving')
+            # print('mpc linear moving')
             return 0
 
         # start MPC
@@ -202,7 +202,7 @@ class ackermann_mpc():
             # self.current_theta = x0[2] - goal_theta
             # xs = np.array([x0[0] + self.current_y/np.sin(abs(self.current_theta)), x0[1], np.array([goal_theta])]).reshape(-1,1)
             mpciter += 1
-            print(f"one iteration time: {time.time() - one_iter_time}")
+            # print(f"one iteration time: {time.time() - one_iter_time}")
 
             # for 승우 simulation
             self.control_output = self.u0

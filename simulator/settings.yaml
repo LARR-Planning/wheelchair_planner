@@ -5,6 +5,10 @@ max_acc: 0.3  # meter/sec_square
 max_ang_vel: 20 # degree/sec
 max_ang_acc: 10  # degree/sec_square
 
+# MPC param
+npc_dt : 0.5
+pred_hrzn : 40
+
 # vehicle dimensions (meter)
 a: 0.3  # length of robot / 2
 b: 0.6  # width of robot / 2
@@ -15,7 +19,6 @@ chair_wheel_width: 0.1
 chair_wheel_dia: 0.5
 chair_a: 0.5
 chair_b: 1.0
-
 marker_size: 0.2
 
 # simulation params
@@ -25,5 +28,6 @@ focusing_speed: 0.01
 start_with_chair: True
 render: True
 env_size: 20  # meter, size of environment at [rend_size * rend_size] window
+traj_len : 500
 
 
