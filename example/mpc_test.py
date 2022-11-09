@@ -1,3 +1,6 @@
+import sys
+from os.path import dirname, abspath
+sys.path.append(dirname(dirname(abspath(__file__))))
 from simulator.WheelTractionSim import WheelTractionSim
 from planner import MPCAckermann as mpc
 import time
@@ -7,7 +10,7 @@ import numpy as np
 
 tick = 100
 dt = 1 / tick
-wheel_sim = WheelTractionSim("../simulator/settings.yaml")
+wheel_sim = WheelTractionSim(dirname(dirname(abspath(__file__)))+"/simulator/settings.yaml")
 print("hello wheel chair")
 running = True
 clock = pygame.time.Clock()
@@ -27,6 +30,16 @@ while running:
             if keys[pygame.K_q] or keys[pygame.K_ESCAPE]:
                 running = False
             elif keys[pygame.K_r]:
+                print("reset robot position")
+                # theta = pi * random.random()
+                ######
+                # Enter the next guide line's angle HERE!
+                theta = wheel_sim.oT_l.rotation.yaw - pi*2/3
+                # wheel_sim.oT_l.rotation.yaw : Current guide line's angle
+                # -pi/2 : turn right w.r.t. current guide line
+                ######
+                wheel_sim.reset_line(theta)
+            elif keys[pygame.K_l]:
                 print("reset robot position")
                 # theta = pi * random.random()
                 ######

@@ -7,6 +7,7 @@ import sys
 from copy import copy
 import yaml
 from pygame import Rect
+
 sys.path.append('../')
 from simulator.utils import *
 import casadi as ca
@@ -62,7 +63,7 @@ class WheelTractionSim:
         vx = ca.SX.sym('vx')
         omega = ca.SX.sym('omega')
         controls = ca.vertcat(vx, vy, omega)
-        rhs = ca.vertcat(vx*ca.cos(theta)-vy*ca.sin(theta), vx*ca.sin(theta)+vy*ca.cos(theta), omega)
+        rhs = ca.vertcat(vx * ca.cos(theta) - vy * ca.sin(theta), vx * ca.sin(theta) + vy * ca.cos(theta), omega)
         self.dynamics = ca.Function('dynamics', [states, controls], [rhs], ['state', 'controls'], ['rhs'])
 
         # define wheelchair param
@@ -153,7 +154,6 @@ class WheelTractionSim:
                 self.y_vel = y_vel
 
         self._update()
-        self.lT_r = trans_from_mat(np.linalg.inv(self.oT_l.as_mat()) @ self.oT_r.as_mat())
 
     def docking(self, is_dock):
         self.with_chair = is_dock
@@ -191,6 +191,9 @@ class WheelTractionSim:
         if self.with_chair:
             self.oT_w = trans_from_mat(self.oT_r.as_mat() @ self.rT_w.as_mat())
 
+        self.lT_r = trans_from_mat(np.linalg.inv(self.oT_l.as_mat()) @ self.oT_r.as_mat())
+        print(f"error_y : {self.lT_r.position.y_val}, error_theta : {self.lT_r.rotation.yaw}")
+
         # Update velocity/acceleration of robot
         self.robot_vel_prev = copy(self.robot_vel)
         self.robot_vel = Trans(Rot(self.yaw_rate), Vector2(self.x_vel, self.y_vel))
@@ -218,6 +221,18 @@ class WheelTractionSim:
         Returns:
         """
         self.py_map.fill((255, 255, 255))
+        # Draw projection region
+        rTproj_corn_list = [Trans(Rot(0), Vector2(0.2 + 1.2069, 1.0221)),
+                            Trans(Rot(0), Vector2(0.2 + 0.2268, 0.4529)),
+                            Trans(Rot(0), Vector2(0.2 + 0.2524, -0.4908)),
+                            Trans(Rot(0), Vector2(0.2 + 1.3329, -1.0717))]
+        points = []
+        for rTproj_corn in rTproj_corn_list:
+            point = trans_from_mat(self.oT_r.as_mat() @ rTproj_corn.as_mat())
+            points.append(point.position.as_vec().squeeze().tolist())
+        points = self._sur_coord(points)
+        pygame.draw.polygon(self.py_map, (255, 255, 0), points)
+
         # Draw line & marker
         pygame.draw.line(self.py_map, (0, 0, 0), self._sur_coord((self.oT_l.position.x_val, self.oT_l.position.y_val)),
                          self._sur_coord((self.oT_nextnode.position.x_val, self.oT_nextnode.position.y_val)))
@@ -294,6 +309,14 @@ class WheelTractionSim:
         :return:
         """
         if type(point) is tuple or type(point) is list:
+            if type(point[0]) is list:
+                res = []
+                for p in point:
+                    x, y = p
+                    x = (x - self.render_center.x_val) * self.rend_ratio + self.rend_size / 2
+                    y = -(y - self.render_center.y_val) * self.rend_ratio + self.rend_size / 2
+                    res.append([x, y])
+                return res
             x, y = point
             x = (x - self.render_center.x_val) * self.rend_ratio + self.rend_size / 2
             y = -(y - self.render_center.y_val) * self.rend_ratio + self.rend_size / 2
