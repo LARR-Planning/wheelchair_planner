@@ -2,7 +2,7 @@ from simulator.WheelTractionSim import WheelTractionSim
 from planner import MPCAckermann as mpc
 import time
 import pygame
-from math import sqrt
+from math import sqrt, pi
 import numpy as np
 
 tick = 100
@@ -31,7 +31,7 @@ while running:
                 # theta = pi * random.random()
                 ######
                 # Enter the next guide line's angle HERE!
-                theta = wheel_sim.oT_l.rotation.yaw - pi/2
+                theta = wheel_sim.oT_l.rotation.yaw + pi*2/3
                 # wheel_sim.oT_l.rotation.yaw : Current guide line's angle
                 # -pi/2 : turn right w.r.t. current guide line
                 ######

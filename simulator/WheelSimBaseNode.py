@@ -23,12 +23,27 @@ class WCSimBase:
 
     def run_sim(self):
         r = rospy.Rate(1 / self.wheel_sim.dt)
+        d_theta = [pi * 2 / 3, -pi * 2 / 3, -pi * 2 / 3, pi / 2, -pi / 2]
+        theta_inx = 0
         while not rospy.is_shutdown():
+            events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.KEYDOWN:
+                    keys = pygame.key.get_pressed()
+                    if keys[pygame.K_q] or keys[pygame.K_ESCAPE]:
+                        pygame.quit()
+                        break
+                    elif keys[pygame.K_r]:
+                        print("reset robot position")
+                        # theta = pi * random.random()
+                        ######
+                        # Enter the next guide line's angle HERE!
+                        theta = self.wheel_sim.oT_l.rotation.yaw + d_theta[theta_inx % len(d_theta)]
+                        # wheel_sim.oT_l.rotation.yaw : Current guide line's angle
+                        # -pi/2 : turn right w.r.t. current guide line
+                        ######
+                        self.wheel_sim.reset_line(theta)
             self.update_sim()
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_q] or keys[pygame.K_ESCAPE]:
-                pygame.quit()
-                break
             r.sleep()
 
     def callback_command(self, data):

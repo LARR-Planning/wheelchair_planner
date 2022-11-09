@@ -3,10 +3,13 @@ This is simulator for 보산진 과제
 """
 import math
 import os
+import sys
 from copy import copy
 import yaml
 from pygame import Rect
+sys.path.append('../')
 from simulator.utils import *
+import casadi as ca
 
 
 class WheelTractionSim:
@@ -50,6 +53,18 @@ class WheelTractionSim:
         self.robot_vel_prev = self.robot_vel = Trans(Rot(0), Vector2(0, 0))
         self.robot_acc = Trans(Rot(0), Vector2(0, 0))
 
+        # define robot dynamics
+        x = ca.SX.sym('x')
+        y = ca.SX.sym('y')
+        theta = ca.SX.sym('theta')
+        states = ca.vertcat(x, y, theta)
+        vy = ca.SX.sym('vy')
+        vx = ca.SX.sym('vx')
+        omega = ca.SX.sym('omega')
+        controls = ca.vertcat(vx, vy, omega)
+        rhs = ca.vertcat(vx*ca.cos(theta)-vy*ca.sin(theta), vx*ca.sin(theta)+vy*ca.cos(theta), omega)
+        self.dynamics = ca.Function('dynamics', [states, controls], [rhs], ['state', 'controls'], ['rhs'])
+
         # define wheelchair param
         self.wT_r = Trans(Rot(0), Vector2(self.L, 0))
         self.rT_w = Trans(Rot(0), Vector2(-self.L, 0))
@@ -82,14 +97,14 @@ class WheelTractionSim:
         """
         # TODO Done : w/ & w/o case 모두에 대해서 input 통일하고 w/ case에서 ackerman constraint 만족하는지만 체크하고 input 넣는걸로!
         update_command_vel = True
-        if yaw_rate is None or y_vel is None or yaw_rate is None:
-            update_command_vel = False
-        elif sqrt(x_vel ** 2 + y_vel ** 2) > self.max_vel:
-            print("[WARNING] Command velocity exceeded maximum speed.")
-            update_command_vel = False
-        elif abs(yaw_rate) > self.max_ang_vel:
-            print("[WARNING] Command yaw_rate exceeded maximum speed.")
-            update_command_vel = False
+        # if yaw_rate is None or y_vel is None or yaw_rate is None:
+        #     update_command_vel = False
+        # elif sqrt(x_vel ** 2 + y_vel ** 2) > self.max_vel:
+        #     print("[WARNING] Command velocity exceeded maximum speed.")
+        #     update_command_vel = False
+        # elif abs(yaw_rate) > self.max_ang_vel:
+        #     print("[WARNING] Command yaw_rate exceeded maximum speed.")
+        #     update_command_vel = False
 
         # TODO : Check acceleration constarint
         # if update_command_vel:
@@ -161,7 +176,17 @@ class WheelTractionSim:
             None
         """
         # Update translation of robot/wheelchair
-        rT_newr = Trans(Rot(self.yaw_rate * self.dt), Vector2(self.x_vel * self.dt, self.y_vel * self.dt))
+        # rT_newr = Trans(Rot(self.yaw_rate * self.dt), Vector2(self.x_vel * self.dt, self.y_vel * self.dt))
+        # Use Runge-Kutta method
+        input_u = [self.x_vel, self.y_vel, self.yaw_rate]
+        rT_r = [0, 0, 0]
+        k1 = self.dynamics(rT_r, [self.x_vel, self.y_vel, self.yaw_rate])
+        k2 = self.dynamics(rT_r + self.dt / 2 * k1, input_u)
+        k3 = self.dynamics(rT_r + self.dt / 2 * k2, input_u)
+        k4 = self.dynamics(rT_r + self.dt * k3, input_u)
+        rT_newr = rT_r + self.dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        rT_newr = rT_newr.toarray().squeeze()
+        rT_newr = Trans(Rot(rT_newr[2]), Vector2(rT_newr[0], rT_newr[1]))
         self.oT_r = trans_from_mat(self.oT_r.as_mat() @ rT_newr.as_mat())
         if self.with_chair:
             self.oT_w = trans_from_mat(self.oT_r.as_mat() @ self.rT_w.as_mat())
@@ -257,7 +282,7 @@ class WheelTractionSim:
 
         # Draw trajectory history
         if len(self.trajectory_queue) != 0:
-            traj = self.trajectory_queue[0:-1:int(self.traj_len/10)].copy()
+            traj = self.trajectory_queue[0:-1:int(self.traj_len / 10)].copy()
             for point in traj:
                 pygame.draw.circle(self.py_map, (50, 50, 50), self._sur_coord(point), 1)
         pygame.display.update()

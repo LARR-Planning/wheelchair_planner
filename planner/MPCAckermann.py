@@ -29,7 +29,7 @@ class ackermann_mpc():
         if self.current_vel == 0:
             self.current_steering = 0
         else:
-            self.current_steering = np.arcsin(current_omega*self.l_wh/self.current_vel)
+            self.current_steering = np.arcsin(np.clip(current_omega*self.l_wh/self.current_vel,-1,1))
         self.is_callback = True
 
     def create_mpc_model(self):
@@ -207,7 +207,7 @@ class ackermann_mpc():
             # for 승우 simulation
             self.control_output = self.u0
             return 0
-        
+
 
 if __name__ == "__main__":
     # Simulation
