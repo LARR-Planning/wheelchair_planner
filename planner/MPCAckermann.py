@@ -142,7 +142,7 @@ class ackermann_mpc():
         # initial and goal states
         initial_loc = (0, 0, 0)
         if self.current_theta != 0:
-            goal_x, goal_y, goal_theta = self.current_y/np.sin(abs(self.current_theta)), 0, - self.current_theta
+            goal_x, goal_y, goal_theta = abs(self.current_y)/np.sin(abs(self.current_theta)), 0, - self.current_theta
             if abs(goal_theta) < (70 * np.pi / 180) :
                 if goal_x > self.v_max*self.T*self.N:
                     goal_x = self.v_max*self.T*self.N
