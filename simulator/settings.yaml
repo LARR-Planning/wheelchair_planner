@@ -6,7 +6,7 @@ max_ang_vel      : 20 # degree/sec
 max_ang_acc      : 10  # degree/sec_square
 
 # MPC param
-npc_dt           : 0.5
+mpc_dt           : 0.5
 pred_hrzn        : 40
 
 # vehicle dimensions (meter)
@@ -24,7 +24,7 @@ marker_size      : 0.2
 # simulation params
 dt               : 0.01  # sec
 rend_size        : 1000  # pixel
-focusing_speed   : 0.01
+focusing_speed   : 0.0
 start_with_chair : True
 render           : True
 env_size         : 20  # meter, size of environment at [rend_size * rend_size] window

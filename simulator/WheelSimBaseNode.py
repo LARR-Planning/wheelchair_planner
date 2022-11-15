@@ -2,7 +2,7 @@ from WheelTractionSim import *
 import rospy
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, Vector3, AccelStamped
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Float32MultiArray
 import tf.transformations
 
 
@@ -12,12 +12,15 @@ class WCSimBase:
         self.wheel_sim = WheelTractionSim(settings_yaml)
         self.cur_command = Vector3()  # x : x_vel, y : y_vel, z : yaw_rate
 
+        self.is_stop = False
+
         # Subscriber
         self.command_sub = rospy.Subscriber("robot_vel_command", Vector3, self.callback_command)
         # Publisher
         self.odometry_pub = rospy.Publisher("robot_odom", Odometry, queue_size=3)
         self.acc_pub = rospy.Publisher("robot_acc", AccelStamped, queue_size=3)
         self.error_pub = rospy.Publisher("error_from_line", PoseStamped, queue_size=3)
+        self.real_robot_pub = rospy.Publisher("nav_topic", Float32MultiArray, queue_size=3)
 
         self.run_sim()
 
@@ -34,7 +37,7 @@ class WCSimBase:
                         pygame.quit()
                         break
                     elif keys[pygame.K_r]:
-                        print("reset robot position")
+                        print("[INFO]Reset robot position")
                         # theta = pi * random.random()
                         ######
                         # Enter the next guide line's angle HERE!
@@ -43,6 +46,9 @@ class WCSimBase:
                         # -pi/2 : turn right w.r.t. current guide line
                         ######
                         self.wheel_sim.reset_line(theta)
+                    elif keys[pygame.K_s]:
+                        self.is_stop = not self.is_stop
+                        print("[INFO]Stop Command Received" if self.is_stop else "[INFO]!GO GO GO!")
             self.update_sim()
             r.sleep()
 
@@ -51,6 +57,8 @@ class WCSimBase:
         self.cur_command = command
 
     def update_sim(self):
+        self.wheel_sim.step(self.cur_command.x, self.cur_command.y, self.cur_command.z)
+
         sim_time = rospy.Time(self.wheel_sim.sim_time)
         # get odometry
         robot_odom = Odometry()
@@ -82,11 +90,23 @@ class WCSimBase:
         error_from_line.pose.orientation.z = err_quat_z
         error_from_line.header.stamp = sim_time
 
+        # publish array like topic
+        # [t_0, y_err, theta_err, x_dot_r, y_dot_r, theta_dot_r, isStop]
+        real_robot_topic = Float32MultiArray()
+
+        real_robot_topic.data = [self.wheel_sim.sim_time,  # time
+                                 self.wheel_sim.lT_r.position.y_val,  # y_err
+                                 self.wheel_sim.lT_r.rotation.yaw,  # theta err
+                                 self.wheel_sim.robot_vel.position.x_val,  # x_dot_r
+                                 self.wheel_sim.robot_vel.position.y_val,  # y_dot_r
+                                 self.wheel_sim.robot_vel.rotation.yaw,  # theta_dot_r
+                                 self.is_stop
+                                 ]
+
         self.odometry_pub.publish(robot_odom)
         self.acc_pub.publish(robot_acc)
         self.error_pub.publish(error_from_line)
-
-        self.wheel_sim.step(self.cur_command.x, self.cur_command.y, self.cur_command.z)
+        self.real_robot_pub.publish(real_robot_topic)
 
 
 if __name__ == "__main__":

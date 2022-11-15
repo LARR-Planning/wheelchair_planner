@@ -2,17 +2,25 @@ import casadi as ca
 import numpy as np
 import time
 import matplotlib.pyplot as plt
+import os
+import yaml
+from math import pi
 
-class ackermann_mpc():
-    def __init__(self):
-        self.T = 0.05   # sampling time [s]
-        self.N = 40     # prediction horizon
-        self.l_wh = 0.7  # [m]
-        self.v_max = 0.5 # [m/s]
-        self.acc_max = 0.3 # [m/s^2]
-        self.omega_max = 15 * np.pi / 180    # [rad/s]
-        self.omega_acc_max = 10 * np.pi / 180    # [rad/s^2]
-        
+class AckermannMPC():
+    def __init__(self, settings_yaml):
+
+        assert os.path.isfile(settings_yaml), settings_yaml
+        with open(settings_yaml, 'r') as stream:
+            settings = yaml.safe_load(stream)
+            self.l_wh = settings['L']  # [m]
+            self.acc_max = settings['max_acc']  # [m/s^2]
+            self.v_max = settings['max_vel'] * 0.99  # [m/s]
+            self.omega_acc_max = settings['max_ang_acc'] * pi / 180  # to radian
+            self.omega_max = settings['max_ang_vel'] * pi / 180  *0.99  # to radian
+            self.with_chair = settings['start_with_chair']
+            self.T = settings["mpc_dt"]  # sampling time [s]
+            self.N = settings["pred_hrzn"]  # prediction horizon
+
         self.first_iter = True
         self.start_time = time.time()
         self.states_for_visualize = []
@@ -86,17 +94,21 @@ class ackermann_mpc():
         self.solver = ca.nlpsol('solver', 'ipopt', nlp_prob, opts_setting)
 
         # inequality constraints (state constraints)
-        self.lbg = []   # lower bount of the constraints
-        self.ubg = []   # upper bount of the constraints
+        self.lbg = []   # lower bound of the constraints
+        self.ubg = []   # upper bound of the constraints
         self.lbx = []   # decision variables lower bound
         self.ubx = []   # decision variables upper bound
 
+        # Initial state constraint
         self.lbg.append(0.0)
         self.lbg.append(0.0)
         self.lbg.append(0.0)
         self.ubg.append(0.0)
         self.ubg.append(0.0)
         self.ubg.append(0.0)
+
+        # Dynamic constraint
+        # X[:,i+1] == f(X[:,i], U[:,i])*self.T + X[:,i]
         for _ in range(self.N):
             self.lbg.append(0.0)
             self.lbg.append(0.0)
@@ -106,16 +118,22 @@ class ackermann_mpc():
             self.ubg.append(0.0)
             self.ubg.append(0.0)
             self.ubg.append(self.omega_max)
+
+        # Acceleration Constraint
         for _ in range(self.N-1):
             self.lbg.append(-self.acc_max)
             self.lbg.append(-self.omega_acc_max)
             self.ubg.append(self.acc_max)
             self.ubg.append(self.omega_acc_max)
+
+        # Constraint on X_input [lin vel, ang vel]
         for _ in range(self.N):
             self.lbx.append(0)
             self.lbx.append(-np.pi/2)
             self.ubx.append(self.v_max)
             self.ubx.append(np.pi/2)
+
+        # Constraint on X_state [x, y, theta], unconstrained
         for _ in range(self.N+1):  # note that this is different with the method using structure
             self.lbx.append(-np.inf)
             self.lbx.append(-np.inf)
@@ -136,7 +154,7 @@ class ackermann_mpc():
 
         return t, st, u_end, x_f
 
-    def ackermann_mpc(self):
+    def solve(self):
         self.is_callback = False
 
         # initial and goal states
@@ -164,29 +182,28 @@ class ackermann_mpc():
             self.u0[0] = [self.current_vel, self.current_steering]
         self.first_iter = False
 
-        x_c = []  # contains for the history of the state
-        u_c = []
-        t_c = []  # for the time
-        sim_time = 20.0
-        mpciter = 0
+        # x_c = []  # contains for the history of the state
+        # u_c = []
+        # t_c = []  # for the time
+        # sim_time = 20.0
+        # mpciter = 0
 
         # Move straight when the robot close enough to the goal line
-        while np.linalg.norm(x0-xs) <= 1e-2:
+        if np.linalg.norm(x0-xs) <= 1e-2:
             self.u0 = np.array([[self.v_max, 0]]*self.N)
             self.control_output = self.u0
             # print('mpc linear moving')
-            return 0
 
         # start MPC
-        while(np.linalg.norm(x0-xs) > 1e-2): # and self.mpciter-sim_time/self.T < 0.0):
-            one_iter_time = time.time()
+        else : # and self.mpciter-sim_time/self.T < 0.0):
+            # one_iter_time = time.time()
             # t0 = 0
             # set parameter
             c_p = np.concatenate((x0, xs))
             init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
-            t_ = time.time()
+            # t_ = time.time()
             res = self.solver(x0=init_control, p=c_p, lbg=self.lbg, lbx=self.lbx, ubg=self.ubg, ubx=self.ubx)
-            self.index_t.append(time.time() - t_)
+            # self.index_t.append(time.time() - t_)
             # the feedback is in the series [u0, x0, u1, x1, ...]
             estimated_opt = res['x'].full()
             self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
@@ -201,12 +218,15 @@ class ackermann_mpc():
             # self.current_y = goal_x - x0[0]
             # self.current_theta = x0[2] - goal_theta
             # xs = np.array([x0[0] + self.current_y/np.sin(abs(self.current_theta)), x0[1], np.array([goal_theta])]).reshape(-1,1)
-            mpciter += 1
+            # mpciter += 1
             # print(f"one iteration time: {time.time() - one_iter_time}")
 
             # for 승우 simulation
             self.control_output = self.u0
-            return 0
+
+            # SY Yoo TODO : return control command & state trajectory (eg) return u0, x_m
+
+        return self.control_output
 
 
 if __name__ == "__main__":
@@ -217,9 +237,9 @@ if __name__ == "__main__":
     ys = 1.5 # meter
     theta_s = 90 * np.pi / 180  # rad
 
-    my_model = ackermann_mpc()
+    my_model = AckermannMPC()
     my_model.state_update(current_y=ys, current_theta=theta_s, current_vel=0.5, current_omega=0)
-    my_model.ackermann_mpc()
+    my_model.solve()
 
     plt.plot(my_model.states_for_visualize[:,0]+robot_x, my_model.states_for_visualize[:,1]+robot_y)
     plt.xlim(0, img_size[0])
@@ -227,3 +247,7 @@ if __name__ == "__main__":
     plt.show()
 
     print('end')
+
+
+
+

@@ -53,6 +53,7 @@ class WheelTractionSim:
         self.oT_r = Trans(Rot(yaw_init), Vector2(x_init, y_init))
         self.robot_vel_prev = self.robot_vel = Trans(Rot(0), Vector2(0, 0))
         self.robot_acc = Trans(Rot(0), Vector2(0, 0))
+        self.x_seq = None
 
         # define robot dynamics
         x = ca.SX.sym('x')
@@ -89,40 +90,58 @@ class WheelTractionSim:
             self.rend_ratio = self.rend_size / self.env_size
             self.rend_wc()
 
-    def step(self, x_vel=None, y_vel=None, yaw_rate=None):
+    def step(self, x_vel=None, y_vel=None, yaw_rate=None, x_seq=None):
         """
         update vehicle position(translation matrix) with given ackerman params
         :param x_vel y_vel yaw_rate: input params without wheelchair?
         :param yaw_rate: command rotation velocity of ackerman dynamics
         :return: y, theta
         """
-        # TODO Done : w/ & w/o case 모두에 대해서 input 통일하고 w/ case에서 ackerman constraint 만족하는지만 체크하고 input 넣는걸로!
+        self.x_seq = x_seq
         update_command_vel = True
-        # if yaw_rate is None or y_vel is None or yaw_rate is None:
-        #     update_command_vel = False
-        # elif sqrt(x_vel ** 2 + y_vel ** 2) > self.max_vel:
-        #     print("[WARNING] Command velocity exceeded maximum speed.")
-        #     update_command_vel = False
-        # elif abs(yaw_rate) > self.max_ang_vel:
-        #     print("[WARNING] Command yaw_rate exceeded maximum speed.")
-        #     update_command_vel = False
+        if yaw_rate is None or y_vel is None or yaw_rate is None:
+            update_command_vel = False
+        elif sqrt(x_vel ** 2 + y_vel ** 2) > self.max_vel:
+            print(
+                f"[WARNING] Command velocity exceeded maximum speed. Violation : {sqrt(x_vel ** 2 + y_vel ** 2) - self.max_vel} m/s")
+            update_command_vel = False
+        elif abs(yaw_rate) > self.max_ang_vel:
+            print(
+                f"[WARNING] Command yaw_rate exceeded maximum raw_rate. Violation : {abs(yaw_rate) - self.max_ang_vel}")
+            update_command_vel = False
 
         # TODO : Check acceleration constarint
-        # if update_command_vel:
-        #     # Check acceleration constraint
-        #     yaw_acc = (yaw_rate - self.robot_vel_prev.rotation.yaw) / self.dt
-        #     lin_acc = (np.array([[x_vel], [y_vel]]) - self.robot_vel_prev.position.as_vec()) / self.dt
-        #     lin_acc_norm = np.linalg.norm(lin_acc)
-        #     if yaw_acc > self.max_ang_acc:
-        #         # adjust yaw_rate with maximum angular acceleration
-        #         # print("[WARNING] Command yaw_rate exceeded maximum angular acceleration.")
-        #         yaw_rate = self.robot_vel_prev.rotation.yaw + self.dt * self.max_ang_acc
-        #     if lin_acc_norm > self.max_acc:
-        #         # print("[WARNING] Command velocity exceeded maximum acceleration.")
-        #         lin_vel = self.robot_vel_prev.position.as_vec() + \
-        #                   self.dt * self.max_acc * lin_acc / lin_acc_norm
-        #         x_vel, y_vel = lin_vel.squeeze()
-        #         # print(lin_acc_norm)
+        if update_command_vel:
+            # Check acceleration constraint
+            yaw_acc = (yaw_rate - self.robot_vel_prev.rotation.yaw) / self.dt
+            lin_acc = (np.array([[x_vel], [y_vel]]) - self.robot_vel_prev.position.as_vec()) / self.dt
+
+            # g.append((U[0, 0] ** 2 + P[6] ** 2 - 2 * U[0, 0] * P[6] * ca.cos(U[1, 0] + P[7])))
+            v1 = sqrt(x_vel ** 2 + y_vel ** 2)
+            v2 = sqrt(self.robot_vel_prev.position.as_vec()[0] ** 2 + self.robot_vel_prev.position.as_vec()[1] ** 2)
+            if v1 == 0:
+                phi1 = 0
+            else:
+                phi1 = np.arcsin(np.clip(yaw_rate * self.L / v1, -1, 1))
+            if v2 == 0:
+                phi2 = 0
+            else:
+                phi2 = np.arcsin(np.clip(self.robot_vel_prev.rotation.yaw * self.L / v2, -1, 1))
+
+            lin_acc_test = v1 ** 2 + v2 ** 2 - 2 * v1 * v2 * cos(phi1 + phi2)
+
+            lin_acc_norm = np.linalg.norm(lin_acc)
+            # if yaw_acc > self.max_ang_acc:
+            #     # adjust yaw_rate with maximum angular acceleration
+            #     # print("[WARNING] Command yaw_rate exceeded maximum angular acceleration.")
+            #     yaw_rate = self.robot_vel_prev.rotation.yaw + self.dt * self.max_ang_acc
+            if lin_acc_norm > self.max_acc:
+                # print(f"[WARNING] Command velocity exceeded maximum acceleration. Violation : {lin_acc_norm},  {self.max_acc}")
+                print(f" acc : {lin_acc_norm}, {lin_acc_test} ")
+                # lin_vel = self.robot_vel_prev.position.as_vec() + \
+                #           self.dt * self.max_acc * lin_acc / lin_acc_norm
+                # x_vel, y_vel = lin_vel.squeeze()
+                # print(lin_acc_norm)
 
         if self.with_chair:
             """
@@ -133,9 +152,10 @@ class WheelTractionSim:
             """
             if abs(y_vel - self.L * yaw_rate) > 1e-4:
                 # it's slip condition ! command should satisfy ackerman constraint
-                print("[WARNING] Yaw Rate and Y velocity does not satisfy Ackerman Constraint")
+                print(
+                    f"[WARNING] Yaw Rate and Y velocity does not satisfy Ackerman Constraint. Violation : {abs(y_vel - self.L * yaw_rate)}")
                 # ignore the input
-                update_command_vel = False
+                # update_command_vel = False
 
             if update_command_vel:
                 self.yaw_rate = yaw_rate
@@ -192,7 +212,7 @@ class WheelTractionSim:
             self.oT_w = trans_from_mat(self.oT_r.as_mat() @ self.rT_w.as_mat())
 
         self.lT_r = trans_from_mat(np.linalg.inv(self.oT_l.as_mat()) @ self.oT_r.as_mat())
-        print(f"error_y : {self.lT_r.position.y_val}, error_theta : {self.lT_r.rotation.yaw}")
+        # print(f"error_y : {self.lT_r.position.y_val}, error_theta : {self.lT_r.rotation.yaw}")
 
         # Update velocity/acceleration of robot
         self.robot_vel_prev = copy(self.robot_vel)
