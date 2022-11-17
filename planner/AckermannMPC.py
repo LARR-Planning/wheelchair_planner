@@ -26,11 +26,12 @@ class AckermannMPC():
         self.states_for_visualize = []
         self.index_t = []
         self.is_stop = False
-        self.control_time = np.array([self.T * i for i in range(self.N)])
+        self.no_chair = False
+        self.control_time = np.array([self.T * i for i in range(self.N + 1)])
 
         self.create_mpc_model()
 
-    def state_update(self, current_y, current_theta, current_vel, current_omega):
+    def state_update(self, current_y, current_theta, current_vel, current_omega, is_stop, no_chair):
         self.current_y = current_y
         self.current_theta = current_theta
         self.current_vel = current_vel
@@ -39,6 +40,8 @@ class AckermannMPC():
         else:
             self.current_steering = np.arcsin(np.clip(current_omega*self.l_wh/self.current_vel,-1,1))
         self.is_callback = True
+        self.is_stop = is_stop
+        self.no_chair = no_chair
 
     def create_mpc_model(self):
         # states
@@ -60,7 +63,7 @@ class AckermannMPC():
         rhs = ca.vertcat(rhs, v*ca.sin(steering)/self.l_wh)
 
         # function
-        self.f = ca.Function('f', [states, controls], [rhs], ['input_state', 'control_input'], ['rhs'])
+        self.with_chair_f = ca.Function('f', [states, controls], [rhs], ['input_state', 'control_input'], ['rhs'])
 
         # for MPC
         U = ca.SX.sym('U', self.n_controls, self.N)
@@ -70,14 +73,17 @@ class AckermannMPC():
         # define
         Q = np.array([[1.0, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]])
         R = np.array([[1.0, 0.0], [0.0, 0.0]])
+        R_is_stop = np.array([[2.0, 0.0], [0.0, 1.0]])
 
         # cost function
         obj = 0 # cost
+        obj_is_stop = 0
         g = []  # equal constrains
         g.append(X[:,0] - P[:3]) # initial state
         for i in range(self.N):
             obj = obj + ca.mtimes([(X[:,i]-P[3:]).T, Q, X[:,i]-P[3:]]) + ca.mtimes([U[:,i].T, R, U[:,i]])
-            x_next_ = self.f(X[:,i], U[:,i])*self.T + X[:,i]
+            obj_is_stop = obj_is_stop + ca.mtimes([U[:,i].T, R_is_stop, U[:,i]])
+            x_next_ = self.with_chair_f(X[:,i], U[:,i])*self.T + X[:,i]
             g.append(X[:, i+1]-x_next_)
             g.append((X[2, i+1]-X[2, i])/self.T) # angular velocity
 
@@ -141,6 +147,52 @@ class AckermannMPC():
             self.ubx.append(np.inf)
             self.ubx.append(np.inf)
             self.ubx.append(np.pi)
+        
+        # cost function in case is_stop
+        nlp_prob_is_stop = {'f': obj_is_stop, 'x': opt_variables, 'p': P, 'g': ca.vertcat(*g)}
+        self.solver_is_stop = ca.nlpsol('solver', 'ipopt', nlp_prob_is_stop, opts_setting)
+        
+        # cost function in case without wheelchair
+        obj_no_chair = 0
+        g_no_chair = [] # equal constrains
+        g_no_chair.append(X[:,0] - P[:3]) # initial state
+        for k in range(self.N):
+            obj_no_chair = obj_no_chair + ca.mtimes([(X[:,k]-P[3:]).T, Q, X[:,k]-P[3:]]) + ca.mtimes([U[:,k].T, R, U[:,k]])
+            g_no_chair.append((X[2, k+1]-X[2, k])/self.T) # angular velocity
+        
+        # linear and angular acceleration constraints
+        for l in range(self.N-1):
+            g_no_chair.append((U[0,l+1]-U[0,l])/self.T)   # linear acceleration
+            g_no_chair.append(((X[2, l+2]-X[2, l+1])/self.T-(X[2, l+1]-X[2, l])/self.T)/self.T)   # angular acceleration
+        
+        nlp_prob_no_chair = {'f': obj_no_chair, 'x': opt_variables, 'p': P, 'g': ca.vertcat(*g_no_chair)}
+        self.solver_no_chair = ca.nlpsol('solver', 'ipopt', nlp_prob_no_chair, opts_setting)
+
+        # inequality constraints (state constraints)
+        self.lbg_no_chair = []   # lower bound of the constraints
+        self.ubg_no_chair = []   # upper bound of the constraints
+
+        # Initial state constraint
+        self.lbg_no_chair.append(0.0)
+        self.lbg_no_chair.append(0.0)
+        self.lbg_no_chair.append(0.0)
+        self.ubg_no_chair.append(0.0)
+        self.ubg_no_chair.append(0.0)
+        self.ubg_no_chair.append(0.0)
+
+        # Dynamic constraint
+        # X[:,i+1] == f(X[:,i], U[:,i])*self.T + X[:,i]
+        for _ in range(self.N):
+            self.lbg_no_chair.append(-self.omega_max)
+            self.ubg_no_chair.append(self.omega_max)
+
+        # Acceleration Constraint
+        for _ in range(self.N-1):
+            self.lbg_no_chair.append(-self.acc_max)
+            self.lbg_no_chair.append(-self.omega_acc_max)
+            self.ubg_no_chair.append(self.acc_max)
+            self.ubg_no_chair.append(self.omega_acc_max)
+
 
     def shift_movement(self, T, t0, x0, u, x_f, f):
         f_value = f(x0, u[0, :])
@@ -154,7 +206,8 @@ class AckermannMPC():
 
         return t, st, u_end, x_f
 
-    def solve(self):
+
+    def solve(self, current_time):
         self.is_callback = False
 
         # initial and goal states
@@ -187,46 +240,65 @@ class AckermannMPC():
         # t_c = []  # for the time
         # sim_time = 20.0
         # mpciter = 0
-
-        # Move straight when the robot close enough to the goal line
-        if np.linalg.norm(x0-xs) <= 1e-2:
-            self.u0 = np.array([[self.v_max, 0]]*self.N)
-            self.control_output = self.u0
-            # print('mpc linear moving')
-
-        # start MPC
-        else : # and self.mpciter-sim_time/self.T < 0.0):
-            # one_iter_time = time.time()
-            # t0 = 0
-            # set parameter
+        if self.is_stop:    # immidiately stop as much as possible
             c_p = np.concatenate((x0, xs))
             init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
-            # t_ = time.time()
-            res = self.solver(x0=init_control, p=c_p, lbg=self.lbg, lbx=self.lbx, ubg=self.ubg, ubx=self.ubx)
-            # self.index_t.append(time.time() - t_)
-            # the feedback is in the series [u0, x0, u1, x1, ...]
+            res = self.solver_is_stop(x0=init_control, p=c_p, lbg=self.lbg, lbx=self.lbx, ubg=self.ubg, ubx=self.ubx)
             estimated_opt = res['x'].full()
             self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
             x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
-            # x_c.append(x_m.T)
-            # u_c.append(self.u0[0, :])
-            # t_c.append(t0)
-            # t0, x0, self.u0, next_states = self.shift_movement(self.T, t0, x0, self.u0, x_m, self.f)
-            # x0 = ca.reshape(x0, -1, 1)
-            # x0 = x0.full()
-            # self.states_for_visualize.append(x0)
-            # self.current_y = goal_x - x0[0]
-            # self.current_theta = x0[2] - goal_theta
-            # xs = np.array([x0[0] + self.current_y/np.sin(abs(self.current_theta)), x0[1], np.array([goal_theta])]).reshape(-1,1)
-            # mpciter += 1
-            # print(f"one iteration time: {time.time() - one_iter_time}")
 
-            # for 승우 simulation
-            self.control_output = self.u0
+        elif self.no_chair: # maneuver without wheelchair
+            c_p = np.concatenate((x0, xs))
+            init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
+            res = self.solver_no_chair(x0=init_control, p=c_p, lbg=self.lbg_no_chair, lbx=self.lbx, ubg=self.ubg_no_chair, ubx=self.ubx)
+            estimated_opt = res['x'].full()
+            self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
+            x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
 
-            # SY Yoo TODO : return control command & state trajectory (eg) return u0, x_m
+        else:   # maneuver with wheelchair
+            # Move straight when the robot close enough to the goal line
+            if np.linalg.norm(x0-xs) <= 1e-2:
+                self.u0 = np.array([[self.v_max, 0]]*self.N)
+                x_m = np.hstack(((self.control_time * self.v_max).reshape(-1, 1), np.zeros((41,2))))
+                # print('mpc linear moving')
 
-        return self.control_output
+            # start MPC
+            else : # and self.mpciter-sim_time/self.T < 0.0):
+                # one_iter_time = time.time()
+                # t0 = 0
+                # set parameter
+                c_p = np.concatenate((x0, xs))
+                init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
+                # t_ = time.time()
+                res = self.solver(x0=init_control, p=c_p, lbg=self.lbg, lbx=self.lbx, ubg=self.ubg, ubx=self.ubx)
+                # self.index_t.append(time.time() - t_)
+                # the feedback is in the series [u0, x0, u1, x1, ...]
+                estimated_opt = res['x'].full()
+                self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
+                x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
+                # x_c.append(x_m.T)
+                # u_c.append(self.u0[0, :])
+                # t_c.append(t0)
+                # t0, x0, self.u0, next_states = self.shift_movement(self.T, t0, x0, self.u0, x_m, self.f)
+                # x0 = ca.reshape(x0, -1, 1)
+                # x0 = x0.full()
+                # self.states_for_visualize.append(x0)
+                # self.current_y = goal_x - x0[0]
+                # self.current_theta = x0[2] - goal_theta
+                # xs = np.array([x0[0] + self.current_y/np.sin(abs(self.current_theta)), x0[1], np.array([goal_theta])]).reshape(-1,1)
+                # mpciter += 1
+                # print(f"one iteration time: {time.time() - one_iter_time}")
+
+                # SY Yoo TODO : return control command & state trajectory (eg) return u0, x_m
+        
+        time_array = (self.control_time + current_time).reshape(-1,1)
+        vel_command, steering_angle = self.u0[:,0].reshape(-1,1), self.u0[:,1].reshape(-1,1)
+        self.control_output = np.hstack((time_array[:self.N], np.hstack((np.hstack((vel_command * np.cos(steering_angle), vel_command * np.sin(steering_angle))), 
+            vel_command * np.sin(steering_angle) / self.l_wh))))
+        self.perception_output = np.hstack((time_array, x_m))
+
+        return self.perception_output, self.control_output
 
 
 if __name__ == "__main__":

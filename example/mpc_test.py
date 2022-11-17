@@ -2,7 +2,7 @@ import sys
 from os.path import dirname, abspath
 sys.path.append(dirname(dirname(abspath(__file__))))
 from simulator.WheelTractionSim import WheelTractionSim
-from planner.AckermannMPC_V3 import AckermannMPC
+from planner.AckermannMPC import AckermannMPC
 import time
 import pygame
 from math import sqrt, pi
@@ -58,12 +58,12 @@ while running:
                 wheel_sim.docking(True)
     # Solve MPC optimization
     first = time.time()
+    is_stop = False
+    no_chair = False
     syeon_model.state_update(wheel_sim.lT_r.position.y_val, wheel_sim.lT_r.rotation.yaw,
-                             sqrt(wheel_sim.x_vel ** 2 + wheel_sim.y_vel ** 2), wheel_sim.yaw_rate)
-    syeon_model.solve()
-    vel_command, steering_angle = syeon_model.control_output[0]
-    x_vel, y_vel, ang_vel = vel_command * np.cos(steering_angle), vel_command * np.sin(
-        steering_angle), vel_command * np.sin(steering_angle) / syeon_model.l_wh
+                             sqrt(wheel_sim.x_vel ** 2 + wheel_sim.y_vel ** 2), wheel_sim.yaw_rate, is_stop, no_chair)
+    output_for_perception, output_for_control = syeon_model.solve(first)    # (N+1 by 4) & (N by 4)
+    x_vel, y_vel, ang_vel = output_for_control[0,1:]
     end = time.time()
     for _ in range(int((end-first)//dt)+1):
         wheel_sim.step(x_vel, y_vel, ang_vel)
