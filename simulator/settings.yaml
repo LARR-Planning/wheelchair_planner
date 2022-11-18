@@ -24,8 +24,8 @@ marker_size      : 0.2
 # simulation params
 dt               : 0.01  # sec
 rend_size        : 1000  # pixel
-focusing_speed   : 0.0
-start_with_chair : True
+focusing_speed   : 1.0
+start_with_chair : False
 render           : True
 env_size         : 20  # meter, size of environment at [rend_size * rend_size] window
 traj_len         : 500
