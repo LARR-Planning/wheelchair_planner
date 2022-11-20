@@ -2,6 +2,7 @@ import casadi as ca
 import numpy as np
 import time
 import matplotlib.pyplot as plt
+from typing import Tuple
 import os
 import yaml
 from math import pi
@@ -26,12 +27,11 @@ class AckermannMPC():
         self.states_for_visualize = []
         self.index_t = []
         self.is_stop = False
-        self.no_chair = False
         self.control_time = np.array([self.T * i for i in range(self.N + 1)])
 
         self.create_mpc_model()
 
-    def state_update(self, current_y, current_theta, current_vel, current_omega, is_stop, no_chair):
+    def state_update(self, current_y, current_theta, current_vel, current_omega, is_stop, with_chair):
         self.current_y = current_y
         self.current_theta = current_theta
         self.current_vel = current_vel
@@ -41,7 +41,7 @@ class AckermannMPC():
             self.current_steering = np.arcsin(np.clip(current_omega*self.l_wh/self.current_vel,-1,1))
         self.is_callback = True
         self.is_stop = is_stop
-        self.no_chair = no_chair
+        self.with_chair = with_chair
         self.current_omega = current_omega
 
     def create_mpc_model(self):
@@ -49,7 +49,7 @@ class AckermannMPC():
         x = ca.SX.sym('x')
         y = ca.SX.sym('y')
         theta = ca.SX.sym('theta')
-        states = ca.vertcat(x,y)
+        states = ca.vertcat(x, y)
         states = ca.vertcat(states, theta)
         self.n_states = states.size()[0]
 
@@ -102,7 +102,11 @@ class AckermannMPC():
         opt_variables = ca.vertcat(ca.reshape(U,-1,1), ca.reshape(X,-1,1))
 
         nlp_prob = {'f': obj, 'x': opt_variables, 'p': P, 'g': ca.vertcat(*g)}
-        opts_setting = {'ipopt.max_iter': 100, 'ipopt.print_level': 0, 'print_time': 0, 'ipopt.acceptable_tol': 1e-8, 'ipopt.acceptable_obj_change_tol': 1e-6}
+        opts_setting = {'ipopt.max_iter': 100,
+                        'ipopt.print_level': 0,
+                        'print_time': 0,
+                        'ipopt.acceptable_tol': 1e-8,
+                        'ipopt.acceptable_obj_change_tol': 1e-6}
 
         self.solver = ca.nlpsol('solver', 'ipopt', nlp_prob, opts_setting)
 
@@ -229,6 +233,7 @@ class AckermannMPC():
             self.ubx_no_chair.append(np.pi)
 
 
+    # TODO do we need this?
     def shift_movement(self, T, t0, x0, u, x_f, f):
         f_value = f(x0, u[0, :])
         st = x0 + T*f_value.full()
@@ -239,8 +244,7 @@ class AckermannMPC():
         return t, st, u_end, x_f
 
 
-    def solve(self, current_time):
-        self.is_callback = False
+    def solve(self, current_time: float) -> Tuple[np.ndarray, np.ndarray]:
 
         # initial and goal states
         initial_loc = (0, 0, 0)
@@ -275,7 +279,7 @@ class AckermannMPC():
             self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
             x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
 
-        elif self.no_chair: # maneuver without wheelchair
+        elif not self.with_chair: # maneuver without wheelchair
             if np.linalg.norm(x0-xs) <= 1e-2:
                 self.u0 = np.array([[self.v_max, 0]]*self.N)
                 x_m = np.hstack(((self.control_time * self.v_max).reshape(-1, 1), np.zeros((41,2))))

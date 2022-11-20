@@ -53,7 +53,9 @@ class WheelTractionSim:
         self.oT_r = Trans(Rot(yaw_init), Vector2(x_init, y_init))
         self.robot_vel_prev = self.robot_vel = Trans(Rot(0), Vector2(0, 0))
         self.robot_acc = Trans(Rot(0), Vector2(0, 0))
-        self.x_seq = None
+        self.pred_traj = None
+        self._pred_traj_old = None
+        self.prev_exe_time = None
 
         # define robot dynamics
         x = ca.SX.sym('x')
@@ -90,14 +92,18 @@ class WheelTractionSim:
             self.rend_ratio = self.rend_size / self.env_size
             self.rend_wc()
 
-    def step(self, x_vel=None, y_vel=None, yaw_rate=None, x_seq=None):
+        print("hello wheel chair")
+
+    def step(self, x_vel=None, y_vel=None, yaw_rate=None, pred_traj=None, exec_time=None):
         """
         update vehicle position(translation matrix) with given ackerman params
         :param x_vel y_vel yaw_rate: input params without wheelchair?
         :param yaw_rate: command rotation velocity of ackerman dynamics
+        :param exec_time: execution time in sec float
         :return: y, theta
         """
-        self.x_seq = x_seq
+        if pred_traj is not None:
+            self.pred_traj = pred_traj
         update_command_vel = True
         if yaw_rate is None or y_vel is None or yaw_rate is None:
             update_command_vel = False
@@ -110,34 +116,24 @@ class WheelTractionSim:
                 f"[WARNING] Command yaw_rate exceeded maximum raw_rate. Violation : {abs(yaw_rate) - self.max_ang_vel}")
             update_command_vel = False
 
-        # TODO : Check acceleration constarint
         if update_command_vel:
             # Check acceleration constraint
-            yaw_acc = (yaw_rate - self.robot_vel_prev.rotation.yaw) / self.dt
-            lin_acc = (np.array([[x_vel], [y_vel]]) - self.robot_vel_prev.position.as_vec()) / self.dt
-
-            # g.append((U[0, 0] ** 2 + P[6] ** 2 - 2 * U[0, 0] * P[6] * ca.cos(U[1, 0] + P[7])))
-            v1 = sqrt(x_vel ** 2 + y_vel ** 2)
-            v2 = sqrt(self.robot_vel_prev.position.as_vec()[0] ** 2 + self.robot_vel_prev.position.as_vec()[1] ** 2)
-            if v1 == 0:
-                phi1 = 0
-            else:
-                phi1 = np.arcsin(np.clip(yaw_rate * self.L / v1, -1, 1))
-            if v2 == 0:
-                phi2 = 0
-            else:
-                phi2 = np.arcsin(np.clip(self.robot_vel_prev.rotation.yaw * self.L / v2, -1, 1))
-
-            lin_acc_test = v1 ** 2 + v2 ** 2 - 2 * v1 * v2 * cos(phi1 + phi2)
-
+            if self.prev_exe_time is None:
+                self.prev_exe_time = exec_time - self.dt
+            yaw_acc = abs(yaw_rate - self.robot_vel_prev.rotation.yaw) / (exec_time - self.prev_exe_time)
+            lin_acc = (np.array([[x_vel], [y_vel]]) - self.robot_vel_prev.position.as_vec()) / (
+                    exec_time - self.prev_exe_time)
+            self.prev_exe_time = exec_time
             lin_acc_norm = np.linalg.norm(lin_acc)
-            # if yaw_acc > self.max_ang_acc:
-            #     # adjust yaw_rate with maximum angular acceleration
-            #     # print("[WARNING] Command yaw_rate exceeded maximum angular acceleration.")
-            #     yaw_rate = self.robot_vel_prev.rotation.yaw + self.dt * self.max_ang_acc
+            if yaw_acc > self.max_ang_acc:
+                print(
+                    f"[WARNING] Command yaw_rate exceeded maximum angular acceleration. Violation : {yaw_acc - self.max_ang_acc:.4f}")
+                # adjust yaw_rate with maximum angular acceleration
+                # yaw_rate = self.robot_vel_prev.rotation.yaw + self.dt * self.max_ang_acc
             if lin_acc_norm > self.max_acc:
-                # print(f"[WARNING] Command velocity exceeded maximum acceleration. Violation : {lin_acc_norm},  {self.max_acc}")
-                print(f" acc : {lin_acc_norm}, {lin_acc_test} ")
+                print(
+                    f"[WARNING] Command velocity exceeded maximum acceleration. Violation : {lin_acc_norm},  {self.max_acc:.4f}")
+                # print(f" acc : {lin_acc_norm}, {lin_acc_test} ")
                 # lin_vel = self.robot_vel_prev.position.as_vec() + \
                 #           self.dt * self.max_acc * lin_acc / lin_acc_norm
                 # x_vel, y_vel = lin_vel.squeeze()
@@ -150,7 +146,7 @@ class WheelTractionSim:
             y_dot_r = L * Yaw_Rate
             theta_dot_r = Yaw_Rate 
             """
-            if abs(y_vel - self.L * yaw_rate) > 1e-4:
+            if abs(y_vel - self.L * yaw_rate) > 1e-3:
                 # it's slip condition ! command should satisfy ackerman constraint
                 print(
                     f"[WARNING] Yaw Rate and Y velocity does not satisfy Ackerman Constraint. Violation : {abs(y_vel - self.L * yaw_rate)}")
@@ -164,15 +160,14 @@ class WheelTractionSim:
                 phi = atan2(self.y_vel, self.x_vel)
                 self.r_ack = self.L * math.tan(pi / 2 - phi)
 
-            if self.x_vel < 0:
-                # If sign of rotation velocity and radius of and ackerman dynamics means
-                print("[WARNING] Moving backward!!!")
         else:  # Undocking mode
             if update_command_vel:
                 self.yaw_rate = yaw_rate
                 self.x_vel = x_vel
                 self.y_vel = y_vel
-
+        if self.x_vel < 0:
+            # If sign of rotation velocity and radius of and ackerman dynamics means
+            print("[WARNING] Moving backward!!!")
         self._update()
 
     def docking(self, is_dock):
@@ -242,10 +237,10 @@ class WheelTractionSim:
         """
         self.py_map.fill((255, 255, 255))
         # Draw projection region
-        rTproj_corn_list = [Trans(Rot(0), Vector2(0.2 + 1.2069, 1.0221)),
-                            Trans(Rot(0), Vector2(0.2 + 0.2268, 0.4529)),
-                            Trans(Rot(0), Vector2(0.2 + 0.2524, -0.4908)),
-                            Trans(Rot(0), Vector2(0.2 + 1.3329, -1.0717))]
+        rTproj_corn_list = [Trans(Rot(0), Vector2(1.2069, 1.0221)),
+                            Trans(Rot(0), Vector2(0.2268, 0.4529)),
+                            Trans(Rot(0), Vector2(0.2524, -0.4908)),
+                            Trans(Rot(0), Vector2(1.3329, -1.0717))]
         points = []
         for rTproj_corn in rTproj_corn_list:
             point = trans_from_mat(self.oT_r.as_mat() @ rTproj_corn.as_mat())
@@ -265,7 +260,7 @@ class WheelTractionSim:
         points = rectangle_points(self.oT_r.position.x_val, self.oT_r.position.y_val, dy=self.b * 2,
                                   dx=self.a * 2, rotation=self.oT_r.rotation.yaw)
         points = self._sur_coord(points)
-        pygame.draw.polygon(self.py_map, (255, 0, 0), points)
+        pygame.draw.polygon(self.py_map, (125, 0, 0), points)
 
         rT_rw_list = [Trans(Rot(0), Vector2(self.a, self.b)),
                       Trans(Rot(0), Vector2(self.a, -self.b)),
@@ -301,9 +296,9 @@ class WheelTractionSim:
             # pinpoints' position 'p'
             wT_p = Trans(Rot(0), Vector2(0, self.r_ack))
             oT_p = trans_from_mat(self.oT_w.as_mat() @ wT_p.as_mat())
-            test = pygame.draw.line(self.py_map, (0, 100, 255),
-                                    self._sur_coord((oT_p.position.x_val, oT_p.position.y_val)),
-                                    self._sur_coord((self.oT_w.position.x_val, self.oT_w.position.y_val)))
+            pygame.draw.line(self.py_map, (0, 100, 255),
+                             self._sur_coord((oT_p.position.x_val, oT_p.position.y_val)),
+                             self._sur_coord((self.oT_w.position.x_val, self.oT_w.position.y_val)))
             # arc of motion
             rect_start = (oT_p.position.x_val - abs(self.r_ack), oT_p.position.y_val + abs(self.r_ack))
             rect = Rect(self._sur_coord(rect_start),
@@ -320,6 +315,28 @@ class WheelTractionSim:
             traj = self.trajectory_queue[0:-1:int(self.traj_len / 10)].copy()
             for point in traj:
                 pygame.draw.circle(self.py_map, (50, 50, 50), self._sur_coord(point), 1)
+
+        # Draw prediction trajectory
+        if self.pred_traj is not None:
+            temp = np.transpose(
+                self.oT_r.as_mat() @ np.transpose(
+                    np.hstack((self.pred_traj[:, 1:3], np.ones((len(self.pred_traj), 1))))))
+            start_xy = []
+            end_xy = []
+            end_xy2 = []
+            for pose, theta in zip(temp, self.pred_traj[:, 3]):
+                start_xy.append((pose[0], pose[1]))
+                end_xy.append((pose[0] + 0.5 * cos(theta + self.oT_r.rotation.yaw),
+                               pose[1] + 0.5 * sin(theta + self.oT_r.rotation.yaw)))
+                end_xy2.append((pose[0] + 0.5 * sin(theta + self.oT_r.rotation.yaw),
+                                pose[1] - 0.5 * cos(theta + self.oT_r.rotation.yaw)))
+            self._pred_traj_old = {'start_xy': start_xy.copy(), 'end_xy': end_xy.copy(), 'end_xy2': end_xy2.copy()}
+            # self.pred_traj = None
+        if self._pred_traj_old is not None:
+            for start, end, end2 in zip(self._pred_traj_old['start_xy'], self._pred_traj_old['end_xy'],
+                                        self._pred_traj_old['end_xy2']):
+                pygame.draw.line(self.py_map, (255, 0, 0), self._sur_coord(start), self._sur_coord(end), width=2)
+                pygame.draw.line(self.py_map, (0, 0, 255), self._sur_coord(start), self._sur_coord(end2), width=2)
         pygame.display.update()
 
     def _sur_coord(self, point):

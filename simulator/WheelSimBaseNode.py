@@ -1,65 +1,102 @@
-from WheelTractionSim import *
+import sys
+import time
+
+sys.path.append('../')
+from simulator.utils import *
+from simulator.WheelTractionSim import WheelTractionSim
 import rospy
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, Vector3, AccelStamped
-from std_msgs.msg import Float32, Float32MultiArray
-import tf.transformations
+from std_msgs.msg import Float32MultiArray, Bool
 
 
 class WCSimBase:
     def __init__(self, settings_yaml):
         rospy.init_node('wc_sim_node', anonymous=True)
+        # rospy.rostime.switch_to_wallclock()
         self.wheel_sim = WheelTractionSim(settings_yaml)
         self.cur_command = Vector3()  # x : x_vel, y : y_vel, z : yaw_rate
 
         self.is_stop = False
 
         # Subscriber
-        self.command_sub = rospy.Subscriber("robot_vel_command", Vector3, self.callback_command)
+        self.command_sub = rospy.Subscriber("robot_vel_command", Vector3, self.command_callback, queue_size=1)
+        self.pred_traj_sub = rospy.Subscriber("robot_pred_traj", Float32MultiArray, self.pred_traj_callback, queue_size=1)
         # Publisher
-        self.odometry_pub = rospy.Publisher("robot_odom", Odometry, queue_size=3)
-        self.acc_pub = rospy.Publisher("robot_acc", AccelStamped, queue_size=3)
-        self.error_pub = rospy.Publisher("error_from_line", PoseStamped, queue_size=3)
-        self.real_robot_pub = rospy.Publisher("nav_topic", Float32MultiArray, queue_size=3)
+        self.docking_pub = rospy.Publisher("is_dock", Bool, queue_size=1)
+        self.odometry_pub = rospy.Publisher("robot_odom", Odometry, queue_size=1)
+        self.acc_pub = rospy.Publisher("robot_acc", AccelStamped, queue_size=1)
+        self.error_pub = rospy.Publisher("error_from_line", PoseStamped, queue_size=1)
+        self.real_robot_pub = rospy.Publisher("nav_topic", Float32MultiArray, queue_size=1)
 
-        self.run_sim()
+        # Timer
+        self.sim_timer = rospy.Timer(rospy.Duration(nsecs=int(self.wheel_sim.dt * 1e+9)), self.sim_timer_callback)
+        rospy.spin()
 
-    def run_sim(self):
-        r = rospy.Rate(1 / self.wheel_sim.dt)
-        d_theta = [pi * 2 / 3, -pi * 2 / 3, -pi * 2 / 3, pi / 2, -pi / 2]
-        theta_inx = 0
-        while not rospy.is_shutdown():
-            events = pygame.event.get()
-            for event in events:
-                if event.type == pygame.KEYDOWN:
-                    keys = pygame.key.get_pressed()
-                    if keys[pygame.K_q] or keys[pygame.K_ESCAPE]:
-                        pygame.quit()
-                        break
-                    elif keys[pygame.K_r]:
-                        print("[INFO]Reset robot position")
-                        # theta = pi * random.random()
-                        ######
-                        # Enter the next guide line's angle HERE!
-                        theta = self.wheel_sim.oT_l.rotation.yaw + d_theta[theta_inx % len(d_theta)]
-                        # wheel_sim.oT_l.rotation.yaw : Current guide line's angle
-                        # -pi/2 : turn right w.r.t. current guide line
-                        ######
-                        self.wheel_sim.reset_line(theta)
-                    elif keys[pygame.K_s]:
-                        self.is_stop = not self.is_stop
-                        print("[INFO]Stop Command Received" if self.is_stop else "[INFO]!GO GO GO!")
-            self.update_sim()
-            r.sleep()
+        # self.run_sim()
 
-    def callback_command(self, data):
+    def sim_timer_callback(self, data):
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                keys = pygame.key.get_pressed()
+                if keys[pygame.K_q] or keys[pygame.K_ESCAPE]:
+                    pygame.quit()
+                    rospy.signal_shutdown("Quit simulation")
+                    break
+                elif keys[pygame.K_l]:
+                    print("reset robot position")
+                    # theta = pi * random.random()
+                    ######
+                    # Enter the next guide line's angle HERE!
+                    theta = self.wheel_sim.oT_l.rotation.yaw + pi * 2 / 3
+                    # wheel_sim.oT_l.rotation.yaw : Current guide line's angle
+                    # -pi/2 : turn right w.r.t. current guide line
+                    ######
+                    self.wheel_sim.reset_line(theta)
+                elif keys[pygame.K_r]:
+                    print("reset robot position")
+                    # theta = pi * random.random()
+                    ######
+                    # Enter the next guide line's angle HERE!
+                    theta = self.wheel_sim.oT_l.rotation.yaw - pi * 2 / 3
+                    # wheel_sim.oT_l.rotation.yaw : Current guide line's angle
+                    # -pi/2 : turn right w.r.t. current guide line
+                    ######
+                    self.wheel_sim.reset_line(theta)
+                elif keys[pygame.K_s]:
+                    self.is_stop = not self.is_stop
+                    print("[INFO]Stop Command Received" if self.is_stop else "[INFO]!GO GO GO!")
+                elif keys[pygame.K_u]:
+                    print("Undocking Wheelchair")
+                    self.wheel_sim.docking(False)
+                    is_docking = Bool()
+                    is_docking.data = False
+                    for _ in range(10):
+                        self.docking_pub.publish(is_docking)
+                elif keys[pygame.K_d]:
+                    print("Docking Wheelchair")
+                    self.wheel_sim.docking(True)
+                    is_docking = Bool()
+                    is_docking.data = True
+                    for _ in range(10):
+                        self.docking_pub.publish(is_docking)
+        self.update_sim(data)
+
+    def command_callback(self, data):
         command: Vector3 = data
         self.cur_command = command
 
-    def update_sim(self):
-        self.wheel_sim.step(self.cur_command.x, self.cur_command.y, self.cur_command.z)
+    def pred_traj_callback(self, data: Float32MultiArray):
+        self.wheel_sim.pred_traj = np.array(data.data).reshape(data.layout.dim[0].size,data.layout.dim[1].size)
 
-        sim_time = rospy.Time(self.wheel_sim.sim_time)
+
+    def update_sim(self, data: rospy.timer.TimerEvent):
+        self.wheel_sim.step(self.cur_command.x, self.cur_command.y, self.cur_command.z,
+                            exec_time= data.current_expected.to_sec())
+        # sim_time = rospy.Time(self.wheel_sim.sim_time)
+        sim_time = ((((data.current_expected.to_sec() % 100000.0) * 1000) // 1.0) / 1000)
+        # print(sim_time)
         # get odometry
         robot_odom = Odometry()
         robot_odom.pose.pose.position.x = self.wheel_sim.oT_r.position.x_val
@@ -94,7 +131,7 @@ class WCSimBase:
         # [t_0, y_err, theta_err, x_dot_r, y_dot_r, theta_dot_r, isStop]
         real_robot_topic = Float32MultiArray()
 
-        real_robot_topic.data = [self.wheel_sim.sim_time,  # time
+        real_robot_topic.data = [sim_time,  # time
                                  self.wheel_sim.lT_r.position.y_val,  # y_err
                                  self.wheel_sim.lT_r.rotation.yaw,  # theta err
                                  self.wheel_sim.robot_vel.position.x_val,  # x_dot_r
@@ -111,8 +148,3 @@ class WCSimBase:
 
 if __name__ == "__main__":
     wheel_sim_ros = WCSimBase("settings.yaml")
-    # running = True
-    # while running:
-    #     keys = pygame.key.get_pressed()
-    #     if keys[pygame.K_q] or keys[pygame.K_ESCAPE]:
-    #         running = False

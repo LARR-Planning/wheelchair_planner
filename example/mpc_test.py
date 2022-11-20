@@ -12,7 +12,6 @@ tick = 100
 dt = 1 / tick
 settings_yaml = dirname(dirname(abspath(__file__)))+"/simulator/settings.yaml"
 wheel_sim = WheelTractionSim(settings_yaml)
-print("hello wheel chair")
 running = True
 clock = pygame.time.Clock()
 
@@ -59,9 +58,9 @@ while running:
     # Solve MPC optimization
     first = time.time()
     is_stop = False
-    no_chair = True
     syeon_model.state_update(wheel_sim.lT_r.position.y_val, wheel_sim.lT_r.rotation.yaw,
-                             sqrt(wheel_sim.x_vel ** 2 + wheel_sim.y_vel ** 2), wheel_sim.yaw_rate, is_stop, no_chair)
+                             sqrt(wheel_sim.x_vel ** 2 + wheel_sim.y_vel ** 2), wheel_sim.yaw_rate,
+                             is_stop, wheel_sim.with_chair)
     output_for_perception, output_for_control = syeon_model.solve(first)    # (N+1 by 4) & (N by 4)
     x_vel, y_vel, ang_vel = output_for_control[0,1:]
     end = time.time()
