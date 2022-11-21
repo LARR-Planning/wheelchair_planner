@@ -230,6 +230,23 @@ class WheelTractionSim:
         if self.render:
             self.rend_wc()
 
+    def _visualize_with_rostopic(self, l_y_r, l_theta_r):
+        self.oT_r = Trans(Rot(0), Vector2(0, 0))
+        self.lT_r = Trans(Rot(l_theta_r), Vector2(0, l_y_r))
+        self.oT_l = trans_from_mat(self.oT_r.as_mat() @ np.linalg.inv(self.lT_r.as_mat()))
+        lT_nextnode = Trans(Rot(0), Vector2(10, 0))
+        self.oT_nextnode = trans_from_mat(self.oT_l.as_mat() @ lT_nextnode.as_mat())
+        if self.with_chair:
+            self.oT_w = trans_from_mat(self.oT_r.as_mat() @ self.rT_w.as_mat())
+
+        # self.lT_r = trans_from_mat(np.linalg.inv(self.oT_l.as_mat()) @ self.oT_r.as_mat())
+
+        # focusing update
+        self.render_center.x_val = 0
+        self.render_center.y_val = 0
+        if self.render:
+            self.rend_wc()
+
     def rend_wc(self):
         """
         Render the wheelchair simulation.

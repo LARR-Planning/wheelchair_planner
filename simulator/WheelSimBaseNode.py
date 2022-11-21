@@ -7,7 +7,7 @@ from simulator.WheelTractionSim import WheelTractionSim
 import rospy
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, Vector3, AccelStamped
-from std_msgs.msg import Float32MultiArray, Bool
+from std_msgs.msg import Float64MultiArray, Bool
 
 
 class WCSimBase:
@@ -21,13 +21,16 @@ class WCSimBase:
 
         # Subscriber
         self.command_sub = rospy.Subscriber("robot_vel_command", Vector3, self.command_callback, queue_size=1)
-        self.pred_traj_sub = rospy.Subscriber("robot_pred_traj", Float32MultiArray, self.pred_traj_callback, queue_size=1)
+        self.pred_traj_sub = rospy.Subscriber("local_path", Float64MultiArray, self.pred_traj_callback, queue_size=1)
         # Publisher
         self.docking_pub = rospy.Publisher("is_dock", Bool, queue_size=1)
         self.odometry_pub = rospy.Publisher("robot_odom", Odometry, queue_size=1)
         self.acc_pub = rospy.Publisher("robot_acc", AccelStamped, queue_size=1)
         self.error_pub = rospy.Publisher("error_from_line", PoseStamped, queue_size=1)
-        self.real_robot_pub = rospy.Publisher("nav_topic", Float32MultiArray, queue_size=1)
+        self.real_robot_pub = rospy.Publisher("nav_to_planner", Float64MultiArray, queue_size=1)
+
+        self.t_ref_sec = int(rospy.rostime.get_rostime().to_sec())
+        self.t_ref_nano = int(rospy.rostime.get_rostime().to_nsec() % 1e+9)
 
         # Timer
         self.sim_timer = rospy.Timer(rospy.Duration(nsecs=int(self.wheel_sim.dt * 1e+9)), self.sim_timer_callback)
@@ -87,15 +90,14 @@ class WCSimBase:
         command: Vector3 = data
         self.cur_command = command
 
-    def pred_traj_callback(self, data: Float32MultiArray):
-        self.wheel_sim.pred_traj = np.array(data.data).reshape(data.layout.dim[0].size,data.layout.dim[1].size)
-
+    def pred_traj_callback(self, data: Float64MultiArray):
+        self.wheel_sim.pred_traj = np.array(data.data).reshape(data.layout.dim[0].size, data.layout.dim[1].size)
 
     def update_sim(self, data: rospy.timer.TimerEvent):
         self.wheel_sim.step(self.cur_command.x, self.cur_command.y, self.cur_command.z,
-                            exec_time= data.current_expected.to_sec())
+                            exec_time=data.current_expected.to_sec())
         # sim_time = rospy.Time(self.wheel_sim.sim_time)
-        sim_time = ((((data.current_expected.to_sec() % 100000.0) * 1000) // 1.0) / 1000)
+        sim_time = self.wheel_sim.sim_time
         # print(sim_time)
         # get odometry
         robot_odom = Odometry()
@@ -129,9 +131,11 @@ class WCSimBase:
 
         # publish array like topic
         # [t_0, y_err, theta_err, x_dot_r, y_dot_r, theta_dot_r, isStop]
-        real_robot_topic = Float32MultiArray()
+        real_robot_topic = Float64MultiArray()
 
-        real_robot_topic.data = [sim_time,  # time
+        real_robot_topic.data = [self.t_ref_sec,
+                                 self.t_ref_nano,
+                                 sim_time,  # time
                                  self.wheel_sim.lT_r.position.y_val,  # y_err
                                  self.wheel_sim.lT_r.rotation.yaw,  # theta err
                                  self.wheel_sim.robot_vel.position.x_val,  # x_dot_r
