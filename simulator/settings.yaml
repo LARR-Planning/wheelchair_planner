@@ -1,12 +1,12 @@
 # dynamics param
 L                : 0.7  # displacement from wheelchair to robot
-max_vel          : 0.6
-max_acc          : 0.3  # meter/sec_square
-max_ang_vel      : 20 # degree/sec
-max_ang_acc      : 10  # degree/sec_square
+max_vel          : 0.3
+max_acc          : 1.5  # meter/sec_square
+max_ang_vel      : 30 # degree/sec
+max_ang_acc      : 100  # degree/sec_square
 
 # MPC param
-mpc_dt           : 0.5
+mpc_dt           : 0.05
 pred_hrzn        : 40
 
 # vehicle dimensions (meter)
@@ -25,9 +25,12 @@ marker_size      : 0.2
 dt               : 0.01  # sec
 rend_size        : 1000  # pixel
 focusing_speed   : 1.0
-start_with_chair : False
+start_with_chair : True
 render           : True
 env_size         : 20  # meter, size of environment at [rend_size * rend_size] window
 traj_len         : 500
+
+
+# ros topic name
 
 
