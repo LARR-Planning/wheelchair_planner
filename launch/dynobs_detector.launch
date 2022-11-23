@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="wheelchair_planner" type="dynobs_detector" name="dynobs_detector" output="screen">
+        <rosparam command="load" file="$(find wheelchair_planner)/params/dynobs_det.yaml" />
+    </node>
+</launch>

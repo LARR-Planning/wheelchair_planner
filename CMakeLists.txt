@@ -9,6 +9,7 @@ set(CMAKE_BUILD_TYPE Release)
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   message_generation
+        std_msgs
   nav_msgs
   roscpp
   rospy
@@ -22,6 +23,9 @@ catkin_package(
         CATKIN_DEPENDS
 )
 file(GLOB WHEELCHAIR_PLANNER src/wheelchair_planner/*.cpp)
-
+file(GLOB DYNAMIC_OBSTACLE_DETECTOR src/dynobs_detector/DynObsDetector.cpp)
 add_executable(wheelchair_planner src/exe/main.cpp ${WHEELCHAIR_PLANNER})
 target_link_libraries(wheelchair_planner ${catkin_LIBRARIES} -lstdc++fs)
+
+add_executable(dynobs_detector src/exe/dodmain.cpp ${DYNAMIC_OBSTACLE_DETECTOR})
+target_link_libraries(dynobs_detector ${catkin_LIBRARIES} -lstdc++fs)

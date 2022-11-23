@@ -1,0 +1,4 @@
+lidar_frame_id: robot_link
+detect_range_lateral: 1.0
+detect_range_longitudinal: 2.0
+num_threshold_stop: 10
