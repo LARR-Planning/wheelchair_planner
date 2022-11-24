@@ -53,7 +53,7 @@ void DynObsDetector::pclExtraction() {
             pt_x = point.x;
             pt_y = point.y;
             pt_z = point.z;
-            if(pt_x<detect_range_longitudinal and pt_y<detect_range_lateral and pt_y>-detect_range_lateral){
+            if(pt_x>0 and pt_x<detect_range_longitudinal and pt_y<detect_range_lateral and pt_y>-detect_range_lateral){
                 pcl_considered.points.push_back(point);
             }
         }
