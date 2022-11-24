@@ -24,14 +24,11 @@ class AckermannMPC():
 
         self.first_iter = True
         self.start_time = time.time()
-        self.states_for_visualize = []
-        self.index_t = []
-        self.is_stop = False
         self.control_time = np.array([self.T * i for i in range(self.N + 1)])
 
         self.create_mpc_model()
 
-    def state_update(self, current_y, current_theta, current_vel, current_omega, is_stop, with_chair):
+    def state_update(self, current_y, current_theta, current_vel, current_omega, current_time: float, with_chair):
         self.current_y = current_y
         self.current_theta = current_theta
         self.current_vel = current_vel
@@ -39,10 +36,9 @@ class AckermannMPC():
             self.current_steering = 0
         else:
             self.current_steering = np.arcsin(np.clip(current_omega*self.l_wh/self.current_vel,-1,1))
-        self.is_callback = True
-        self.is_stop = is_stop
         self.with_chair = with_chair
         self.current_omega = current_omega
+        self.current_time = current_time
 
     def create_mpc_model(self):
         # states
@@ -80,16 +76,13 @@ class AckermannMPC():
         # define
         Q = np.array([[1.0, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]])
         R = np.array([[1.0, 0.0], [0.0, 0.0]])
-        R_is_stop = np.array([[2.0, 0.0], [0.0, 1.0]])
 
         # cost function
         obj = 0 # cost
-        obj_is_stop = 0
         g = []  # equal constrains
         g.append(X[:,0] - P[:3]) # initial state
         for i in range(self.N):
             obj = obj + ca.mtimes([(X[:,i]-P[3:]).T, Q, X[:,i]-P[3:]]) + ca.mtimes([U[:,i].T, R, U[:,i]])
-            obj_is_stop = obj_is_stop + ca.mtimes([U[:,i].T, R_is_stop, U[:,i]])
             x_next_ = self.with_chair_f(X[:,i], U[:,i])*self.T + X[:,i]
             g.append(X[:, i+1]-x_next_)
             g.append((X[2, i+1]-X[2, i])/self.T) # angular velocity
@@ -97,7 +90,8 @@ class AckermannMPC():
         # linear and angular acceleration constraints
         for j in range(self.N-1):
             g.append((U[0,j+1]-U[0,j])/self.T)   # linear acceleration
-            g.append(((X[2, j+2]-X[2, j+1])/self.T-(X[2, j+1]-X[2, j])/self.T)/self.T)   # angular acceleration
+            # g.append(((X[2, j+2]-X[2, j+1])/self.T-(X[2, j+1]-X[2, j])/self.T)/self.T)   # angular acceleration
+            g.append((ca.sin(U[1,j+1])*U[0,j+1]/self.l_wh - ca.sin(U[1,j])*U[0,j]/self.l_wh) / self.T)  # angular acceleration
 
         opt_variables = ca.vertcat(ca.reshape(U,-1,1), ca.reshape(X,-1,1))
 
@@ -157,10 +151,6 @@ class AckermannMPC():
             self.ubx.append(np.inf)
             self.ubx.append(np.inf)
             self.ubx.append(np.pi)
-        
-        # cost function in case is_stop
-        nlp_prob_is_stop = {'f': obj_is_stop, 'x': opt_variables, 'p': P, 'g': ca.vertcat(*g)}
-        self.solver_is_stop = ca.nlpsol('solver', 'ipopt', nlp_prob_is_stop, opts_setting)
         
         # cost function in case without wheelchair
         U_no_chair = ca.SX.sym('U', self.n_controls_no_chair, self.N)
@@ -233,20 +223,10 @@ class AckermannMPC():
             self.ubx_no_chair.append(np.pi)
 
 
-    # TODO do we need this?
-    def shift_movement(self, T, t0, x0, u, x_f, f):
-        f_value = f(x0, u[0, :])
-        st = x0 + T*f_value.full()
-        t = t0 + T
-        u_end = np.concatenate((u[1:], u[-1:]))
-        x_f = np.concatenate((x_f[1:], x_f[-1:]), axis=0)
-
-        return t, st, u_end, x_f
-
-
-    def solve(self, current_time: float) -> Tuple[np.ndarray, np.ndarray]:
-
+    def solve(self, current_y, current_theta, current_vel, current_omega, current_time: float, with_chair) -> Tuple[np.ndarray, np.ndarray]:
         # initial and goal states
+        self.state_update(current_y, current_theta, current_vel, current_omega, current_time, with_chair)
+
         initial_loc = (0, 0, 0)
         if self.current_theta != 0:
             goal_x, goal_y, goal_theta = abs(self.current_y)/np.sin(abs(self.current_theta)), 0, - self.current_theta
@@ -258,7 +238,6 @@ class AckermannMPC():
             goal_x, goal_y, goal_theta = 0, 0, 0
         goal_loc = (goal_x, goal_y, goal_theta)
 
-        t0 = 0.0
         x0 = np.array(initial_loc).reshape(-1,1)  # initial state
         x_m = np.zeros((self.n_states, self.N+1))
         next_states = x_m.copy().T
@@ -271,15 +250,7 @@ class AckermannMPC():
             self.u0[0] = [self.current_vel, self.current_steering]
         self.first_iter = False
 
-        if self.is_stop:    # immidiately stop as much as possible
-            c_p = np.concatenate((x0, xs))
-            init_control = np.concatenate((self.u0.reshape(-1, 1), next_states.reshape(-1, 1)))
-            res = self.solver_is_stop(x0=init_control, p=c_p, lbg=self.lbg, lbx=self.lbx, ubg=self.ubg, ubx=self.ubx)
-            estimated_opt = res['x'].full()
-            self.u0 = estimated_opt[:self.n_controls*self.N].reshape(self.N, self.n_controls)  # (N, n_controls)
-            x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
-
-        elif not self.with_chair: # maneuver without wheelchair
+        if not self.with_chair: # maneuver without wheelchair
             if np.linalg.norm(x0-xs) <= 1e-2:
                 self.u0 = np.array([[self.v_max, 0]]*self.N)
                 x_m = np.hstack(((self.control_time * self.v_max).reshape(-1, 1), np.zeros((41,2))))
@@ -297,7 +268,7 @@ class AckermannMPC():
                 x_m = estimated_opt[self.n_controls_no_chair*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
                 # print(f"one iteration time: {time.time() - one_iter_time}")
 
-                time_array = (self.control_time + current_time).reshape(-1,1)
+                time_array = (self.control_time + self.current_time).reshape(-1,1)
                 vel_command, steering_angle = extended_u0[:,0].reshape(-1,1), extended_u0[:,1].reshape(-1,1)
                 self.control_output = np.hstack((time_array[:self.N], np.hstack((np.hstack((vel_command * np.cos(steering_angle), vel_command * np.sin(steering_angle))), 
                     extended_u0[:,2].reshape(-1,1)))))
@@ -326,7 +297,7 @@ class AckermannMPC():
                 x_m = estimated_opt[self.n_controls*self.N:].reshape(self.N+1, self.n_states)  # (N+1, n_states)
                 # print(f"one iteration time: {time.time() - one_iter_time}")
         
-        time_array = (self.control_time + current_time).reshape(-1,1)
+        time_array = (self.control_time + self.current_time).reshape(-1,1)
         vel_command, steering_angle = self.u0[:,0].reshape(-1,1), self.u0[:,1].reshape(-1,1)
         self.control_output = np.hstack((time_array[:self.N], np.hstack((np.hstack((vel_command * np.cos(steering_angle), vel_command * np.sin(steering_angle))), 
             vel_command * np.sin(steering_angle) / self.l_wh))))
