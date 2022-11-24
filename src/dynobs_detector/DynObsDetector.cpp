@@ -36,7 +36,6 @@ void DynObsDetector::cbPcl(const sensor_msgs::PointCloud::ConstPtr &pcl_msgs) {
         pcl_msg_converted.header.stamp = pcl_msgs->header.stamp;
         pcl_msg_converted.points = pcl_msgs->points;
     }
-
 //    if(!pcl_msgs->fields.empty()){
 //        sensor_msgs::convertPointCloud2ToPointCloud(*pcl_msgs,pcl_msg_converted);
 //        pcl_msg_converted.header.frame_id = pcl_msgs->header.frame_id;
