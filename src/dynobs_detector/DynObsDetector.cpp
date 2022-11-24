@@ -22,20 +22,26 @@ DynObsDetector::DynObsDetector():nh("~") {
     nh.param<double>("detect_range_lateral",detect_range_lateral,1.0);
     nh.param<double>("detect_range_longitudinal", detect_range_longitudinal,2.0);
     nh.param<int>("num_threshold_stop",num_threshold_stop,100);
-    pubConsideredPcl = nh.advertise<sensor_msgs::PointCloud2>("pcl_considered",1);
+    pubConsideredPcl = nh.advertise<sensor_msgs::PointCloud>("pcl_considered",1);
     pubDynExist = nh.advertise<std_msgs::Bool>("is_dyn_exist",1);
-    subPcl = nh.subscribe("/total/point_cloud",1,&DynObsDetector::cbPcl,this);
+    subPcl = nh.subscribe("pcl_topic",1,&DynObsDetector::cbPcl,this);
     isDynObs.data = false;
 }
 
-void DynObsDetector::cbPcl(const sensor_msgs::PointCloud2::ConstPtr &pcl_msgs) {
+void DynObsDetector::cbPcl(const sensor_msgs::PointCloud::ConstPtr &pcl_msgs) {
     pcl_msg_converted.points.clear();
 
-    if(!pcl_msgs->fields.empty()){
-        sensor_msgs::convertPointCloud2ToPointCloud(*pcl_msgs,pcl_msg_converted);
+    if(not pcl_msgs->points.empty()){
         pcl_msg_converted.header.frame_id = pcl_msgs->header.frame_id;
         pcl_msg_converted.header.stamp = pcl_msgs->header.stamp;
+        pcl_msg_converted.points = pcl_msgs->points;
     }
+
+//    if(!pcl_msgs->fields.empty()){
+//        sensor_msgs::convertPointCloud2ToPointCloud(*pcl_msgs,pcl_msg_converted);
+//        pcl_msg_converted.header.frame_id = pcl_msgs->header.frame_id;
+//        pcl_msg_converted.header.stamp = pcl_msgs->header.stamp;
+//    }
 }
 
 void DynObsDetector::pclExtraction() {
@@ -43,10 +49,11 @@ void DynObsDetector::pclExtraction() {
     if(!pcl_msg_converted.points.empty()){
         pcl_considered.header.frame_id = pcl_msg_converted.header.frame_id;
         pcl_considered.header.stamp = pcl_msg_converted.header.stamp;
-        double pt_x, pt_y;
+        double pt_x, pt_y, pt_z;
         for(const auto &point: pcl_msg_converted.points){
             pt_x = point.x;
             pt_y = point.y;
+            pt_z = point.z;
             if(pt_x<detect_range_longitudinal and pt_y<detect_range_lateral and pt_y>-detect_range_lateral){
                 pcl_considered.points.push_back(point);
             }
@@ -55,16 +62,20 @@ void DynObsDetector::pclExtraction() {
 }
 
 void DynObsDetector::determineStop() {
-    if(!pcl_msg_converted.points.empty()){
+    if(!pcl_considered.points.empty()){
         if(pcl_considered.points.size()>num_threshold_stop){
             isDynObs.data = true;
         }
+        else{
+            isDynObs.data = false;
+        }
+    }
+    else{
+        isDynObs.data = false;
     }
 }
 
 void DynObsDetector::publish() {
-    if(not pcl_considered.points.empty()){
-        pubConsideredPcl.publish(pcl_considered);
-    }
+    pubConsideredPcl.publish(pcl_considered);
     pubDynExist.publish(isDynObs);
 }

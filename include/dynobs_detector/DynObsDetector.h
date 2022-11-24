@@ -19,7 +19,7 @@ private:
     ros::Subscriber subPcl;
     ros::Publisher pubConsideredPcl;
     ros::Publisher pubDynExist;
-    void cbPcl(const sensor_msgs::PointCloud2::ConstPtr& pcl_msgs);
+    void cbPcl(const sensor_msgs::PointCloud::ConstPtr& pcl_msgs);
 
     std::string robot_frame_id;
     double detect_range_lateral;
