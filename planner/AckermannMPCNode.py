@@ -37,9 +37,8 @@ class MPCAckermannNode:
         error: Float64MultiArray = data
         self.t_ref_sec, self.t_ref_nsec, t_cur, y_err, theta_err, x_dot_r, y_dot_r, theta_dot_r, isStop = error.data
         # print(f"error y : {error_y}, error_theta : {error_theta}, time : {error.header.stamp}")
-        self.mpc_model.state_update(y_err, theta_err, sqrt(x_dot_r ** 2 + y_dot_r ** 2), theta_dot_r, bool(isStop),
+        self.traj, self.control_seq = self.mpc_model.solve(y_err, theta_err, sqrt(x_dot_r ** 2 + y_dot_r ** 2), theta_dot_r, t_cur,
                                     self.with_chair)
-        self.traj, self.control_seq = self.mpc_model.solve(t_cur)
 
         traj_msg = Float64MultiArray()
         traj_msg.data = self.traj.reshape((-1))
