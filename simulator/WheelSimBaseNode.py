@@ -1,5 +1,6 @@
 import sys
 import time
+from random import random
 
 sys.path.append('../')
 from simulator.utils import *
@@ -12,7 +13,7 @@ from std_msgs.msg import Float64MultiArray, Bool
 
 class WCSimBase:
     def __init__(self, settings_yaml):
-        rospy.init_node('wc_sim_node', anonymous=True)
+        rospy.init_node('wc_sim_node', anonymous=False)
         # rospy.rostime.switch_to_wallclock()
         self.wheel_sim = WheelTractionSim(settings_yaml)
         self.cur_command = Float64MultiArray()  # x : x_vel, y : y_vel, z : yaw_rate

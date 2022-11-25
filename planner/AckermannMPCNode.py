@@ -1,5 +1,5 @@
 import numpy as np
-from math import atan2, sqrt, cos, sin
+from math import atan2, sqrt, cos, sin, floor
 import rospy
 from geometry_msgs.msg import Vector3
 from std_msgs.msg import Float64MultiArray, Bool, MultiArrayLayout, MultiArrayDimension
@@ -11,13 +11,13 @@ class MPCAckermannNode:
         self.mpc_model = AckermannMPC(settings_yaml)
         self.with_chair = self.mpc_model.with_chair
 
-        rospy.init_node('ackermann_mpc_node', anonymous=True)
+        rospy.init_node('ackermann_mpc_node', anonymous=False)
         # Subscriber
         # self.error_sub = rospy.Subscriber("error_from_line", PoseStamped, self.callback_error, queue_size=1)
         self.real_robot_sub = rospy.Subscriber("nav_to_planner", Float64MultiArray, self.callback_nav, queue_size=1)
         self.wheel_chair_docking_sub = rospy.Subscriber("is_dock", Bool, self.callback_with_chair, queue_size=1)
         self.is_single_mode_sub = rospy.Subscriber("is_single_mode", Bool, self.callback_is_single_mode, queue_size=1)
-        self.is_dyn_exist_sub = rospy.Subscriber("is_dyn_exist", Bool, self.callback_is_dyn_exist, queue_size=1)
+        self.is_dyn_exist_sub = rospy.Subscriber("/dynobs_detector/is_dyn_exist", Bool, self.callback_is_dyn_exist, queue_size=1)
         # Publisher
         self.command_pub = rospy.Publisher("xytheta_vel", Float64MultiArray, queue_size=1)
         self.traj_pub = rospy.Publisher("local_path", Float64MultiArray, queue_size=1)
@@ -48,6 +48,13 @@ class MPCAckermannNode:
         # [t_0, y_err, theta_err, x_dot_r, y_dot_r, theta_dot_r, isStop]
         error: Float64MultiArray = data
         self.t_ref_sec, self.t_ref_nsec, t_cur, y_err, theta_err, x_dot_r, y_dot_r, theta_dot_r, self.is_stop_by_nav = error.data
+
+        # a, self.t_ref_nsec, t_cur, y_err, theta_err, x_dot_r, y_dot_r, theta_dot_r, self.is_stop_by_nav = error.data
+        # self.cnt = self.cnt + 1
+        # if self.cnt == 1:
+        #   self.t_ref_sec = floor(rospy.get_rostime().to_sec())
+        #  self.t_ref_nsec = floor(1e-9*rospy.get_rostime().to_sec())
+
         # print(f"error y : {error_y}, error_theta : {error_theta}, time : {error.header.stamp}")
         self.traj, self.control_seq = self.mpc_model.solve(y_err, theta_err, sqrt(x_dot_r ** 2 + y_dot_r ** 2),
                                                            theta_dot_r, t_cur,
@@ -65,15 +72,18 @@ class MPCAckermannNode:
             return
         # print(data.current_expected.to_sec())
         cur_time = data.current_expected.to_sec()
-        cur_time = cur_time - (self.t_ref_sec + self.t_ref_nsec / 1e+9)
+        cur_time = cur_time - (self.t_ref_sec + self.t_ref_nsec * 1e-9)
+        is_stop = self.is_stop_by_dyn or self.is_stop_by_nav\
+
         # temp = self.control_seq[0, 0]
         if cur_time < self.control_seq[0, 0]:
             print(f'[control callback] cur_time is strange...{cur_time - self.control_seq[0, 0]}')
         elif cur_time > self.control_seq[-1, 0]:
             print('[control callback] cur_time exceed mpc prediction')
+            is_stop = True
+
         # print(cur_time - self.control_seq[0, 0], data.current_expected.to_sec(), self.t_ref_sec , self.t_ref_nsec / 1e+9)
 
-        is_stop = self.is_stop_by_dyn or self.is_stop_by_nav
         command_vector = Float64MultiArray()
         if not is_stop:
             com_vec = np.array([np.interp(cur_time, self.control_seq[:, 0], self.control_seq[:, 1]),

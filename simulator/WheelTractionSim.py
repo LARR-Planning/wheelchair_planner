@@ -79,7 +79,7 @@ class WheelTractionSim:
         # define line coordinate
         # l : guide line, nextnode : end of guide line
         self.oT_l = Trans(Rot(0), Vector2(0, 0))
-        lT_nextnode = Trans(Rot(0), Vector2(10, 0))
+        lT_nextnode = Trans(Rot(0), Vector2(3, 0))
         self.lT_r = trans_from_mat(np.linalg.inv(self.oT_l.as_mat()) @ self.oT_r.as_mat())
         self.oT_nextnode = trans_from_mat(self.oT_l.as_mat() @ lT_nextnode.as_mat())
 
@@ -322,10 +322,10 @@ class WheelTractionSim:
                         (abs(2 * self.r_ack * self.rend_ratio), abs(2 * self.r_ack * self.rend_ratio)))
             start_angle = -math.copysign(pi * 0.5, self.r_ack) + self.oT_w.rotation.yaw
             end_angle = start_angle + self.yaw_rate
-            if self.yaw_rate < 0:
-                pygame.draw.arc(self.py_map, (0, 0, 0), rect, end_angle, start_angle)
-            else:
-                pygame.draw.arc(self.py_map, (0, 0, 0), rect, start_angle, end_angle)
+            # if self.yaw_rate < 0:
+            #     pygame.draw.arc(self.py_map, (0, 0, 0), rect, end_angle, start_angle)
+            # else:
+            #     pygame.draw.arc(self.py_map, (0, 0, 0), rect, start_angle, end_angle)
 
         # Draw trajectory history
         if len(self.trajectory_queue) != 0:
@@ -352,8 +352,8 @@ class WheelTractionSim:
         if self._pred_traj_old is not None:
             for start, end, end2 in zip(self._pred_traj_old['start_xy'], self._pred_traj_old['end_xy'],
                                         self._pred_traj_old['end_xy2']):
-                pygame.draw.line(self.py_map, (255, 0, 0), self._sur_coord(start), self._sur_coord(end), width=2)
-                pygame.draw.line(self.py_map, (0, 0, 255), self._sur_coord(start), self._sur_coord(end2), width=2)
+                pygame.draw.line(self.py_map, (255, 0, 0), self._sur_coord(start), self._sur_coord(end))
+                pygame.draw.line(self.py_map, (0, 0, 255), self._sur_coord(start), self._sur_coord(end2))
         pygame.display.update()
 
     def _sur_coord(self, point):
@@ -384,7 +384,7 @@ class WheelTractionSim:
                 point[1] = (-(point[1] - self.render_center.y_val) * self.rend_ratio + self.rend_size / 2).copy()
             return point
 
-    def reset_line(self, theta=None, guideline_length=10):
+    def reset_line(self, theta=None, guideline_length=3):
         """
         Update guideline with given angle
         Args:

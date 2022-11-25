@@ -1,7 +1,6 @@
 import casadi as ca
 import numpy as np
 import time
-import matplotlib.pyplot as plt
 from typing import Tuple
 import os
 import yaml
@@ -74,7 +73,7 @@ class AckermannMPC():
         P = ca.SX.sym('P', self.n_states + self.n_states)  # parameters which include the initial (in every step) and the reference state of the robot
 
         # define
-        Q = np.array([[1.0, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]])
+        Q = np.array([[10, 0.0, 0.0], [0.0, 5, 0.0], [0.0, 0.0, 1.5]])
         R = np.array([[1.0, 0.0], [0.0, 0.0]])
 
         # cost function
@@ -230,7 +229,11 @@ class AckermannMPC():
         initial_loc = (0, 0, 0)
         if self.current_theta != 0:
             goal_x, goal_y, goal_theta = abs(self.current_y)/np.sin(abs(self.current_theta)), 0, - self.current_theta
-            if abs(goal_theta) < (70 * np.pi / 180) :
+            if abs(goal_theta) < (20 * np.pi / 180):
+                if goal_x < self.v_max*self.T*self.N*0.5:
+                    goal_x = self.v_max * self.T * self.N * 0.5
+                goal_y = -self.current_y * np.cos(abs(self.current_theta))
+            elif abs(goal_theta) < (70 * np.pi / 180) :
                 if goal_x > self.v_max*self.T*self.N:
                     goal_x = self.v_max*self.T*self.N
                 goal_y = -self.current_y * np.cos(abs(self.current_theta))
