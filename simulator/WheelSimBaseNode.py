@@ -25,7 +25,7 @@ class WCSimBase:
         self.command_sub = rospy.Subscriber("xytheta_vel", Float64MultiArray, self.command_callback, queue_size=1)
         self.pred_traj_sub = rospy.Subscriber("local_path", Float64MultiArray, self.pred_traj_callback, queue_size=1)
         # Publisher
-        self.docking_pub = rospy.Publisher("is_dock", Bool, queue_size=1)
+        self.is_single_mode_pub = rospy.Publisher("is_single_mode", Bool, queue_size=1)
         self.odometry_pub = rospy.Publisher("robot_odom", Odometry, queue_size=1)
         self.acc_pub = rospy.Publisher("robot_acc", AccelStamped, queue_size=1)
         self.error_pub = rospy.Publisher("error_from_line", PoseStamped, queue_size=1)
@@ -75,17 +75,17 @@ class WCSimBase:
                 elif keys[pygame.K_u]:
                     print("Undocking Wheelchair")
                     self.wheel_sim.docking(False)
-                    is_docking = Bool()
-                    is_docking.data = False
+                    is_single_mode = Bool()
+                    is_single_mode.data = True
                     for _ in range(10):
-                        self.docking_pub.publish(is_docking)
+                        self.is_single_mode_pub.publish(is_single_mode)
                 elif keys[pygame.K_d]:
                     print("Docking Wheelchair")
                     self.wheel_sim.docking(True)
-                    is_docking = Bool()
-                    is_docking.data = True
+                    is_single_mode = Bool()
+                    is_single_mode.data = False
                     for _ in range(10):
-                        self.docking_pub.publish(is_docking)
+                        self.is_single_mode_pub.publish(is_single_mode)
         self.update_sim(data)
 
     def command_callback(self, data):
