@@ -1,5 +1,6 @@
 import sys
 import time
+from random import random
 
 sys.path.append('../')
 from simulator.utils import *
@@ -12,15 +13,16 @@ from std_msgs.msg import Float64MultiArray, Bool
 
 class WCSimBase:
     def __init__(self, settings_yaml):
-        rospy.init_node('wc_sim_node', anonymous=True)
+        rospy.init_node('wc_sim_node', anonymous=False)
         # rospy.rostime.switch_to_wallclock()
         self.wheel_sim = WheelTractionSim(settings_yaml)
-        self.cur_command = Vector3()  # x : x_vel, y : y_vel, z : yaw_rate
+        self.cur_command = Float64MultiArray()  # x : x_vel, y : y_vel, z : yaw_rate
+        self.cur_command.data = [0, 0, 0]
 
         self.is_stop = False
 
         # Subscriber
-        self.command_sub = rospy.Subscriber("robot_vel_command", Vector3, self.command_callback, queue_size=1)
+        self.command_sub = rospy.Subscriber("xytheta_vel", Float64MultiArray, self.command_callback, queue_size=1)
         self.pred_traj_sub = rospy.Subscriber("local_path", Float64MultiArray, self.pred_traj_callback, queue_size=1)
         # Publisher
         self.docking_pub = rospy.Publisher("is_dock", Bool, queue_size=1)
@@ -87,17 +89,17 @@ class WCSimBase:
         self.update_sim(data)
 
     def command_callback(self, data):
-        command: Vector3 = data
+        command: Float64MultiArray = data
         self.cur_command = command
 
     def pred_traj_callback(self, data: Float64MultiArray):
         self.wheel_sim.pred_traj = np.array(data.data).reshape(data.layout.dim[0].size, data.layout.dim[1].size)
 
     def update_sim(self, data: rospy.timer.TimerEvent):
-        self.wheel_sim.step(self.cur_command.x, self.cur_command.y, self.cur_command.z,
+        self.wheel_sim.step(self.cur_command.data[0], self.cur_command.data[1], self.cur_command.data[2],
                             exec_time=data.current_expected.to_sec())
         # sim_time = rospy.Time(self.wheel_sim.sim_time)
-        sim_time = self.wheel_sim.sim_time
+        sim_time = data.current_expected.to_sec() - (self.t_ref_sec + self.t_ref_nano / 1e+9)
         # print(sim_time)
         # get odometry
         robot_odom = Odometry()
