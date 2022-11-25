@@ -15,7 +15,6 @@ class MPCAckermannNode:
         # Subscriber
         # self.error_sub = rospy.Subscriber("error_from_line", PoseStamped, self.callback_error, queue_size=1)
         self.real_robot_sub = rospy.Subscriber("nav_to_planner", Float64MultiArray, self.callback_nav, queue_size=1)
-        self.wheel_chair_docking_sub = rospy.Subscriber("is_dock", Bool, self.callback_with_chair, queue_size=1)
         self.is_single_mode_sub = rospy.Subscriber("is_single_mode", Bool, self.callback_is_single_mode, queue_size=1)
         self.is_dyn_exist_sub = rospy.Subscriber("/dynobs_detector/is_dyn_exist", Bool, self.callback_is_dyn_exist, queue_size=1)
         # Publisher
@@ -38,10 +37,12 @@ class MPCAckermannNode:
     def callback_is_dyn_exist(self, data: Bool):
         self.is_stop_by_dyn = data.data
 
-    def callback_with_chair(self, data: Bool):
-        self.with_chair = data.data
-
     def callback_is_single_mode(self, data: Bool):
+        if data.data:
+            print("single_mode detected")
+        else :
+            print("wheelchair_mode detected")
+
         self.with_chair = not data.data
 
     def callback_nav(self, data: Float64MultiArray):
